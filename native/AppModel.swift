@@ -62,8 +62,31 @@ final class AppModel: ObservableObject {
         catch { notice = "Could not save your changes: \(error.localizedDescription)" }
     }
     func selectRealm(_ id: String) { visibility.stop(); preferences.selectedRealm = id; selectedGroup = "All"; query = ""; save() }
+    @discardableResult
+    func setGroupName(_ name: String, replacing old: String? = nil) -> Bool {
+        guard canSave, let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return false }
+        do {
+            var candidate = preferences
+            let updated = try candidate.realms[index].setGroupName(name, replacing: old)
+            try store.save(candidate)
+            preferences = candidate
+            if let old, selectedGroup == old { selectedGroup = updated }
+            notice = nil; return true
+        } catch { notice = error.localizedDescription; return false }
+    }
+    func removeGroup(_ name: String) {
+        guard canSave, let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return }
+        var candidate = preferences
+        candidate.realms[index].removeGroup(name)
+        do {
+            try store.save(candidate); preferences = candidate
+            if selectedGroup == name { selectedGroup = "All" }
+            notice = nil
+        } catch { notice = "Could not save your changes: \(error.localizedDescription)" }
+    }
     func group(_ bundleID: String, name: String) {
         guard let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return }
+        guard name == "Ungrouped" || realm.availableGroups.contains(name) else { return }
         var groups = preferences.realms[index].groups ?? [:]
         groups[bundleID] = name == "Ungrouped" ? nil : name
         preferences.realms[index].groups = groups; save()

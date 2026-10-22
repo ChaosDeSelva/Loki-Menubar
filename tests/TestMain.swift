@@ -55,11 +55,34 @@ enum Tests {
         var legacy = try JSONSerialization.jsonObject(with: JSONEncoder().encode(preferences)) as! [String: Any]
         legacy.removeValue(forKey: "rehideDelay"); legacy.removeValue(forKey: "autoRehide")
         legacy["realms"] = (legacy["realms"] as! [[String: Any]]).map { entry in
-            var result = entry; result.removeValue(forKey: "groups"); result.removeValue(forKey: "tuckedApps"); return result
+            var result = entry; result.removeValue(forKey: "groupNames"); result.removeValue(forKey: "groups"); result.removeValue(forKey: "tuckedApps"); return result
         }
         try JSONSerialization.data(withJSONObject: legacy).write(to: store.url)
         let migrated = try store.load()
         check("Legacy preferences remain readable", migrated.realms[0].pins == ["a"] && migrated.realms[0].groups == nil)
+        check("Legacy groups retain defaults", migrated.realms[0].availableGroups == ["Work", "Personal", "System"])
+        var custom = Realm.defaults[0]
+        custom.groups = ["online": "Work", "offline": "Work", "other": "Personal"]
+        custom.pins = ["offline"]; custom.order = ["online", "offline"]
+        _ = try custom.setGroupName(" Work · Development ", replacing: "Work")
+        _ = try custom.setGroupName("Work · Meetings")
+        check("Multiple work groups supported", custom.availableGroups.contains("Work · Development") && custom.availableGroups.contains("Work · Meetings"))
+        check("Rename retains offline assignments", custom.groups?["offline"] == "Work · Development" && custom.groups?["online"] == "Work · Development")
+        for invalid in ["", "  ", "All", "ungrouped", "PERSONAL", String(repeating: "a", count: 41)] {
+            let before = custom
+            do { _ = try custom.setGroupName(invalid); check("Invalid group rejected", false) }
+            catch { check("Invalid group leaves state intact", custom == before) }
+        }
+        custom.removeGroup("Work · Development")
+        check("Delete only unassigns its own items", custom.groups == ["other": "Personal"] && custom.pins == ["offline"] && custom.order == ["online", "offline"])
+        preferences.realms[0] = custom
+        try store.save(preferences)
+        let customized = try store.load()
+        check("Custom names persist independently", customized.realms[0] == custom && customized.realms[1].availableGroups == ["Work", "Personal", "System"])
+        for name in custom.availableGroups { custom.removeGroup(name) }
+        preferences.realms[0] = custom; try store.save(preferences)
+        let emptyGroups = try store.load()
+        check("Deleted defaults stay deleted after restart", emptyGroups.realms[0].availableGroups.isEmpty)
         print("\(passed) tests passed")
     }
 }

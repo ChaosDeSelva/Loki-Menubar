@@ -39,6 +39,7 @@ struct MainView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     nav("Your shelf", symbol: "square.grid.2x2", page: "shelf")
                     nav("Menu bar", symbol: "menubar.rectangle", page: "menubar")
+                    nav("Groups", symbol: "folder", page: "groups")
                     nav("Realms", symbol: "circle.hexagongrid", page: "realms")
                     nav("Settings", symbol: "slider.horizontal.3", page: "settings")
                 }
@@ -75,6 +76,7 @@ struct MainView: View {
             Group {
                 switch model.page {
                 case "menubar": MenuBarView(model: model, visibility: model.visibility)
+                case "groups": GroupsView(model: model).id(model.realm.id)
                 case "realms": RealmsView(model: model)
                 case "settings": SettingsView(model: model)
                 default: ShelfView(model: model, compact: false)
@@ -149,10 +151,14 @@ struct ShelfView: View {
                 sourceButton("Apps", source: "apps", symbol: "app.dashed")
                 sourceButton("Menu items", source: "menu", symbol: "menubar.rectangle")
                 Menu(model.selectedGroup == "All" ? "Groups" : model.selectedGroup) {
-                    ForEach(["All", "Work", "Personal", "System", "Ungrouped"], id: \.self) { group in
+                    ForEach(["All"] + model.realm.availableGroups + ["Ungrouped"], id: \.self) { group in
                         Button(group) { model.selectedGroup = group }
                     }
-                }.menuStyle(.borderlessButton).fixedSize().font(.system(size: 11))
+                    Divider()
+                    Button("Manage groups…") {
+                        model.page = "groups"; (NSApp.delegate as? AppDelegate)?.showMainWindow()
+                    }
+                }.menuStyle(.borderlessButton).frame(maxWidth: 120).lineLimit(1).font(.system(size: 11))
                 Spacer()
                 Button { model.favoritesOnly.toggle() } label: {
                     Image(systemName: model.favoritesOnly ? "star.fill" : "star")
@@ -278,7 +284,7 @@ struct ShelfRow: View {
             Button("Open \(item.title)") { model.open(item) }
             Button(model.realm.pins.contains(item.id) ? "Remove from favorites" : "Add to favorites") { model.pin(item.id) }
             Menu("Group") {
-                ForEach(["Work", "Personal", "System", "Ungrouped"], id: \.self) { group in
+                ForEach(model.realm.availableGroups + ["Ungrouped"], id: \.self) { group in
                     Button(group) { model.group(item.id, name: group) }
                 }
             }
@@ -488,5 +494,60 @@ struct MenuBarView: View {
                     .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
             }.padding(30)
         }
+    }
+}
+
+struct GroupsView: View {
+    @ObservedObject var model: AppModel
+    @State private var newName = ""
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Your groups. Your names.").font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
+                Text("Organize \(model.realm.name) your way: Work · Development, Work · Meetings, Creative, Home—or anything that fits your day.")
+                    .font(.system(size: 13)).foregroundStyle(LokiStyle.muted)
+                HStack {
+                    TextField("New group name", text: $newName).textFieldStyle(.roundedBorder)
+                        .onSubmit { addGroup() }.accessibilityLabel("New group name")
+                    Button("Add group", action: addGroup).buttonStyle(AccentButton(color: model.accent))
+                        .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                if let notice = model.notice { Text(notice).font(.caption).foregroundStyle(model.accent) }
+                if model.realm.availableGroups.isEmpty {
+                    Text("No groups yet. Add your first one above.").foregroundStyle(LokiStyle.muted)
+                }
+                ForEach(model.realm.availableGroups, id: \.self) { name in
+                    GroupEditorRow(name: name, model: model)
+                }
+                Text("Right-click a shelf item → Group to assign it. Rename keeps assignments, including items that are currently offline. Removing a group returns its items to Ungrouped; it never removes apps, favorites, or shelf entries. Groups are independent in each realm.")
+                    .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+            }.padding(30)
+        }
+    }
+    private func addGroup() { if model.setGroupName(newName) { newName = "" } }
+}
+
+struct GroupEditorRow: View {
+    let name: String
+    @ObservedObject var model: AppModel
+    @State private var draft: String
+    init(name: String, model: AppModel) {
+        self.name = name; self.model = model; _draft = State(initialValue: name)
+    }
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "folder").foregroundStyle(model.accent)
+            VStack(alignment: .leading, spacing: 5) {
+                TextField("Group name", text: $draft).textFieldStyle(.roundedBorder)
+                    .onSubmit { model.setGroupName(draft, replacing: name) }
+                    .accessibilityLabel("Rename \(name)")
+                Text("\((model.realm.groups ?? [:]).values.filter { $0 == name }.count) assigned items")
+                    .font(.caption).foregroundStyle(LokiStyle.muted)
+            }
+            Button("Save") { model.setGroupName(draft, replacing: name) }.disabled(draft == name)
+            Button { model.removeGroup(name) } label: { Image(systemName: "trash") }
+                .buttonStyle(.borderless).help("Remove \(name); its items become Ungrouped")
+                .accessibilityLabel("Remove \(name)")
+        }.padding(16).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 12))
     }
 }

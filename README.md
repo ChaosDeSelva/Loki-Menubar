@@ -6,14 +6,14 @@ A little order. A little mischief. An original Swift/AppKit menu-bar utility for
 
 ## Release status
 
-**0.1.0-alpha.1 is an early preview.** Apple Silicon; macOS 14 or later. Release checks ran on macOS 27.0.1. Earlier macOS versions and notched MacBooks are not yet verified. See the explicit feature gaps below before installing.
+**0.1.0-alpha.2 is an early preview.** Apple Silicon; macOS 14 or later. Release checks ran on macOS 27.0.1. Earlier macOS versions and notched MacBooks are not yet verified. See the explicit feature gaps below before installing.
 
 ## What is included
 
 - A menu-bar dropdown, separate from the explicitly opened settings window; no Dock icon or launch-time window.
 - Search, arrow-key navigation, Return to open, favorites, and drag ordering within Loki’s shelf.
 - Separate sources for real menu extras and running-application shortcuts.
-- Three renameable realms with independent favorites, order, and Work/Personal/System groups. Right-click a row to assign its group.
+- Three renameable realms with independent favorites, order, and custom groups. Open Groups to create, rename, or remove categories such as Development, Meetings, or Home. Right-click a row to assign its group. Renaming retains assignments; removing a group returns items to Ungrouped.
 - Menu discovery restricted to Accessibility menu-extra trees, excluding the Apple/File/Edit trees.
 - Opening an item closes Loki first, resolves its accessible position, and posts a normal mouse click off the UI thread. Stale/unpositioned items fail with an explanation.
 - An explicit close button, Escape, outside-click dismissal, and Control–Option–L to summon/toggle the shelf.
@@ -84,3 +84,5 @@ To uninstall: disable launch at login, quit Loki (which removes its divider), th
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md). Code and vector artwork are under [MIT](LICENSE). The folded-rune design was developed with AI-assisted concept exploration and recreated as vector paths; no third-party logo artwork is included. No trademark clearance is implied.
+
+See [the roadmap](ROADMAP.md) for prioritized improvements and release-quality criteria.

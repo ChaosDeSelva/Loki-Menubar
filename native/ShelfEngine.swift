@@ -14,12 +14,50 @@ struct Realm: Codable, Identifiable, Equatable {
     var order: [String]
     var tuckedApps: [String]? = nil
     var groups: [String: String]? = nil
+    var groupNames: [String]? = nil
+
+    var availableGroups: [String] {
+        var names = groupNames ?? ["Work", "Personal", "System"]
+        for name in Set((groups ?? [:]).values).sorted() where !names.contains(name) { names.append(name) }
+        return names
+    }
+
+    mutating func setGroupName(_ proposed: String, replacing old: String? = nil) throws -> String {
+        let name = proposed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= 40 else { throw GroupNameError("Use a group name between 1 and 40 characters.") }
+        guard !["All", "Ungrouped"].contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else {
+            throw GroupNameError("All and Ungrouped are reserved filters. Choose another name.")
+        }
+        var names = availableGroups
+        if let old, !names.contains(old) { throw GroupNameError("This group no longer exists.") }
+        guard !names.contains(where: { $0 != old && $0.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) else {
+            throw GroupNameError("A group with that name already exists in this realm.")
+        }
+        if let old, let index = names.firstIndex(of: old) {
+            names[index] = name
+            groups = groups?.mapValues { $0 == old ? name : $0 }
+        } else { names.append(name) }
+        groupNames = names
+        return name
+    }
+
+    mutating func removeGroup(_ name: String) {
+        groupNames = availableGroups.filter { $0 != name }
+        groups = groups?.filter { $0.value != name }
+    }
+
 
     static let defaults = [
         Realm(id: "asgard", name: "Asgard", symbol: "sun.max", pins: [], order: []),
         Realm(id: "midgard", name: "Midgard", symbol: "leaf", pins: [], order: []),
         Realm(id: "jotunheim", name: "Jotunheim", symbol: "snowflake", pins: [], order: [])
     ]
+}
+
+struct GroupNameError: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
 }
 
 struct Preferences: Codable {

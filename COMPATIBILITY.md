@@ -6,7 +6,7 @@ This is a preview release. “Implemented” describes code, not proof across al
 
 Checked on Apple Silicon / macOS 27.0.1:
 
-- Signed build compiles; 23 search, ordering, geometry, grouping, and persistence regression checks pass.
+- Signed build compiles; 35 search, ordering, geometry, grouping, and persistence regression checks pass.
 - The menu-extra scan yields one Clock and no Apple-menu entries in the observed setup (previous prototype incorrectly produced dozens of duplicates).
 - Escape closes the shelf, verified through the app’s independent `--status` response. The close control also removes Loki’s visible window.
 - Selecting Control Center opens a Control Center panel and leaves Loki’s shelf closed. A subsequent automation inspection timed out; this is not a claim of broad third-party menu compatibility.
@@ -54,3 +54,7 @@ System privacy indicators remain owned by macOS. Wallpaper overlays, widgets, an
 ## Before a stable 1.0
 
 Prove hiding/reveal/recovery on supported OS and display combinations; support inaccessible or notch-obscured items safely; test menu tracking across representative utilities; stabilize identifiers across label changes; qualify login, sleep and display reconfiguration. Only then expand the advertised compatibility range. Appearance and extra integrations come after reliability.
+
+## Alpha 2 validation
+
+Custom group lifecycle, migration, invalid names, offline assignments, realm isolation, and persistence are covered by the 35-check suite. The signed app builds and responds to its status command. Interactive group-editor verification was blocked by a timeout in the UI automation service; this release remains an alpha.
