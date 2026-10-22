@@ -1,0 +1,16 @@
+name: Build and tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regression tests
+        run: bash scripts/test.sh
+      - name: Build app (ad-hoc signature)
+        run: bash scripts/build.sh
