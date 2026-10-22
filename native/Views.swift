@@ -2,6 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum LokiStyle {
+    static let controlHeight: CGFloat = 36
+    static let danger = Color(red: 1, green: 0.36, blue: 0.38)
     static let background = Color(red: 0.055, green: 0.075, blue: 0.065)
     static let sidebar = Color(red: 0.075, green: 0.095, blue: 0.08)
     static let surface = Color(red: 0.105, green: 0.13, blue: 0.11)
@@ -61,11 +63,6 @@ struct MainView: View {
                     }
                 }
                 Spacer()
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack { Text("SUMMON LOKI").font(.system(size: 9, weight: .bold)).tracking(1.5); Spacer(); Text("⌃⌥L").font(.system(size: 12, design: .monospaced)) }
-                    Text(model.shortcutRegistered ? "A little order. A little mischief." : "Shortcut unavailable. Use the menu bar icon.")
-                        .font(.system(size: 11)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
-                }.padding(13).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 12))
                 HStack(spacing: 6) {
                     Circle().fill(model.accent).frame(width: 5, height: 5)
                     Text("ON YOUR MAC. ALWAYS.").font(.system(size: 8, weight: .semibold)).tracking(1)
@@ -113,20 +110,21 @@ struct ShelfView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(compact ? "LOKI / \(model.realm.name.uppercased())" : "A PLACE FOR YOUR LITTLE UTILITIES")
                         .font(.system(size: 9, weight: .bold)).tracking(2).foregroundStyle(model.accent)
-                    Text(compact ? (model.preferences.playful ? "A little mischief." : "Your menu bar") : "Less clutter. More Loki.")
-                        .font(.system(size: compact ? 25 : 36, weight: .semibold, design: .rounded)).tracking(-1)
                     if !compact {
+                        Text("Less clutter. More Loki.")
+                            .font(.system(size: 36, weight: .semibold, design: .rounded)).tracking(-1)
                         Text("Your favorite tools, gathered in one little shelf.")
                             .font(.system(size: 13)).foregroundStyle(LokiStyle.muted)
                     }
                 }
                 Spacer()
                 if compact {
+                    Button { (NSApp.delegate as? AppDelegate)?.showMainWindow() } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 28, height: 28)
+                    }.buttonStyle(.plain).help("Open Loki window").accessibilityLabel("Open Loki window")
                     Button { (NSApp.delegate as? AppDelegate)?.closeShelf() } label: {
-                        Image(systemName: "xmark").padding(7)
+                        Image(systemName: "xmark").frame(width: 28, height: 28)
                     }.buttonStyle(.plain).help("Close shelf (Escape)").accessibilityLabel("Close shelf")
-                    Button { (NSApp.delegate as? AppDelegate)?.showMainWindow() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").padding(7) }
-                        .buttonStyle(.plain).help("Open Loki window")
                 }
             }
             HStack(spacing: 10) {
@@ -150,15 +148,7 @@ struct ShelfView: View {
             HStack {
                 sourceButton("Apps", source: "apps", symbol: "app.dashed")
                 sourceButton("Menu items", source: "menu", symbol: "menubar.rectangle")
-                Menu(model.selectedGroup == "All" ? "Groups" : model.selectedGroup) {
-                    ForEach(["All"] + model.realm.availableGroups + ["Ungrouped"], id: \.self) { group in
-                        Button(group) { model.selectedGroup = group }
-                    }
-                    Divider()
-                    Button("Manage groups…") {
-                        model.page = "groups"; (NSApp.delegate as? AppDelegate)?.showMainWindow()
-                    }
-                }.menuStyle(.borderlessButton).frame(maxWidth: 120).lineLimit(1).font(.system(size: 11))
+                GroupSelector(model: model)
                 Spacer()
                 Button { model.favoritesOnly.toggle() } label: {
                     Image(systemName: model.favoritesOnly ? "star.fill" : "star")
@@ -212,8 +202,7 @@ struct ShelfView: View {
                         }.menuStyle(.borderlessButton).fixedSize().font(.system(size: 11))
                     } else { Text("\(model.realm.pins.count) favorites in \(model.realm.name)").font(.system(size: 10)) }
                 }.foregroundStyle(LokiStyle.muted)
-                Text(model.preferences.source == "apps" ? "App shortcuts bring running apps forward. Switch to Menu items for their menus." : "Open Menu bar in the Loki window to set up icon hiding.")
-                    .font(.system(size: 10)).foregroundStyle(LokiStyle.muted.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
+
             }
         }
         .padding(compact ? 24 : 30)
@@ -340,11 +329,13 @@ struct PermissionCard: View {
 }
 
 struct AccentButton: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
     let color: Color
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.system(size: 12, weight: .semibold))
-            .padding(.horizontal, 16).padding(.vertical, 10)
+            .padding(.horizontal, 16).frame(height: LokiStyle.controlHeight)
             .foregroundStyle(LokiStyle.background).background(color.opacity(configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 8))
+            .opacity(enabled ? 1 : 0.4)
     }
 }
 
@@ -375,7 +366,7 @@ struct RealmCard: View {
             Image(systemName: realm.symbol).font(.system(size: 24)).foregroundStyle(model.accent).frame(width: 42)
             VStack(alignment: .leading, spacing: 6) {
                 if editing {
-                    TextField("Realm name", text: $name).textFieldStyle(.roundedBorder).onSubmit { model.renameRealm(realm.id, name: name); editing = false }
+                    TextField("Realm name", text: $name).textFieldStyle(LokiTextFieldStyle()).onSubmit { model.renameRealm(realm.id, name: name); editing = false }
                 } else { Text(realm.name).font(.system(size: 17, weight: .medium, design: .rounded)) }
                 Text("\(realm.pins.count) favorites · your own little world").font(.system(size: 11)).foregroundStyle(LokiStyle.muted)
             }
@@ -419,6 +410,7 @@ struct SettingsView: View {
                         Button("Allow menu access") { model.requestAccessibility() }.buttonStyle(AccentButton(color: model.accent))
                     }
                 }
+                UpdateSettingsView(updater: model.updater, accent: model.accent)
                 settingsGroup("HONEST LITTLE UTILITY") {
                     Label("Local by design", systemImage: "lock.shield").font(.system(size: 13, weight: .medium)).foregroundStyle(model.accent)
                     Text("Loki stores your realms on this Mac. It has no analytics, cloud service, or screen capture. Menu discovery uses Accessibility only when you select Menu items.")
@@ -456,6 +448,7 @@ extension Notification.Name { static let lokiFocusSearch = Notification.Name("Lo
 struct MenuBarView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var visibility: VisibilityController
+    @State private var confirmStop = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -464,21 +457,31 @@ struct MenuBarView: View {
                     .foregroundStyle(LokiStyle.muted)
                 VStack(alignment: .leading, spacing: 16) {
                     Label("Set up your menu bar", systemImage: "menubar.rectangle").font(.headline)
-                    Text("1. Show the divider.\n2. Hold Command and drag the │ divider to the left of Loki’s icon.\n3. Command-drag the icons you want to hide to the left of the divider.\n4. Choose Tuck icons, close this window, and move the pointer away from the menu bar.")
+                    if visibility.supported {
+                    Text("1. Show the divider.\n2. Hold Command and drag the filter-shaped divider to the left of Loki’s icon.\n3. Command-drag the icons you want to hide to the left of the divider.\n4. Choose Tuck icons, close this window, and move the pointer away from the menu bar.")
                         .font(.system(size: 13)).lineSpacing(7).fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Loki’s divider cannot hide icons on macOS 27 yet. The previous build incorrectly reported success. Use macOS’s menu-bar settings for now; Loki’s searchable shelf and groups remain available.")
+                            .font(.system(size: 13)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    }
                     HStack {
-                        if visibility.managing {
+                        if !visibility.supported {
+                            Button("Open macOS Menu Bar settings") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension")!)
+                            }.buttonStyle(AccentButton(color: model.accent))
+                        } else if visibility.managing {
                             Button("Tuck icons") { visibility.tuck(); (NSApp.delegate as? AppDelegate)?.hideWindows() }
                                 .buttonStyle(AccentButton(color: model.accent))
-                            Button("Stop hiding & remove divider") { visibility.stop() }.buttonStyle(.bordered)
+                            Button("Stop hiding & remove divider") { confirmStop = true }.buttonStyle(DestructiveButton())
                         } else {
                             Button("Show divider") { model.startVisibility() }.buttonStyle(AccentButton(color: model.accent))
                         }
                     }
-                    Text(visibility.concealed ? "Icons tucked away" : visibility.managing ? "Divider ready · icons revealed" : "All icons visible")
+                    Text(visibility.concealed ? "Hiding requested" : visibility.managing ? "Divider ready · icons revealed" : "All icons visible")
                         .font(.caption).foregroundStyle(model.accent)
                     if let failure = visibility.failure { Text(failure).font(.caption).foregroundStyle(.orange) }
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+                if visibility.supported {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("Rehide after hovering away", isOn: Binding(get: { model.preferences.autoRehide ?? true }, set: { model.preferences.autoRehide = $0; model.save(); visibility.stop() }))
                         .toggleStyle(.switch).tint(model.accent)
@@ -490,10 +493,15 @@ struct MenuBarView: View {
                     Text("Hover near the menu bar to reveal. Loki stays revealed while its window is active. Quitting or changing displays stops hiding; changing Spaces reveals icons. Setup is never enabled automatically at launch.")
                         .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                 }.padding(20).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+                }
                 Text("Compatibility preview: macOS controls placement and some system icons cannot be moved. A crowded or notched display may still need the searchable shelf. No screen capture or private system APIs are used.")
                     .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
             }.padding(30)
         }
+        .alert("Stop hiding and remove the divider?", isPresented: $confirmStop) {
+            Button("Cancel", role: .cancel) { }
+            Button("Stop hiding", role: .destructive) { visibility.stop() }
+        } message: { Text("All icons will be revealed. You can set up the divider again later.") }
     }
 }
 
@@ -507,12 +515,16 @@ struct GroupsView: View {
                 Text("Organize \(model.realm.name) your way: Work · Development, Work · Meetings, Creative, Home—or anything that fits your day.")
                     .font(.system(size: 13)).foregroundStyle(LokiStyle.muted)
                 HStack {
-                    TextField("New group name", text: $newName).textFieldStyle(.roundedBorder)
+                    TextField("New group name", text: $newName).textFieldStyle(LokiTextFieldStyle())
                         .onSubmit { addGroup() }.accessibilityLabel("New group name")
                     Button("Add group", action: addGroup).buttonStyle(AccentButton(color: model.accent))
                         .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 if let notice = model.notice { Text(notice).font(.caption).foregroundStyle(model.accent) }
+                if model.canUndoGroupDeletion {
+                    Button("Undo last group deletion") { model.undoGroupDeletion() }
+                        .buttonStyle(AccentButton(color: model.accent))
+                }
                 if model.realm.availableGroups.isEmpty {
                     Text("No groups yet. Add your first one above.").foregroundStyle(LokiStyle.muted)
                 }
@@ -531,23 +543,105 @@ struct GroupEditorRow: View {
     let name: String
     @ObservedObject var model: AppModel
     @State private var draft: String
+    @State private var confirmDelete = false
     init(name: String, model: AppModel) {
         self.name = name; self.model = model; _draft = State(initialValue: name)
     }
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "folder").foregroundStyle(model.accent)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "folder").foregroundStyle(model.accent).frame(width: 24, height: LokiStyle.controlHeight)
             VStack(alignment: .leading, spacing: 5) {
-                TextField("Group name", text: $draft).textFieldStyle(.roundedBorder)
+                TextField("Group name", text: $draft).textFieldStyle(LokiTextFieldStyle())
                     .onSubmit { model.setGroupName(draft, replacing: name) }
                     .accessibilityLabel("Rename \(name)")
                 Text("\((model.realm.groups ?? [:]).values.filter { $0 == name }.count) assigned items")
                     .font(.caption).foregroundStyle(LokiStyle.muted)
             }
-            Button("Save") { model.setGroupName(draft, replacing: name) }.disabled(draft == name)
-            Button { model.removeGroup(name) } label: { Image(systemName: "trash") }
-                .buttonStyle(.borderless).help("Remove \(name); its items become Ungrouped")
+            Button("Save") { model.setGroupName(draft, replacing: name) }.buttonStyle(AccentButton(color: model.accent)).disabled(draft == name)
+            Button { confirmDelete = true } label: { Image(systemName: "trash") }
+                .buttonStyle(DestructiveButton()).help("Remove \(name); its items become Ungrouped")
                 .accessibilityLabel("Remove \(name)")
         }.padding(16).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+        .alert("Delete “\(name)”?", isPresented: $confirmDelete) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete group", role: .destructive) { model.removeGroup(name) }
+        } message: { Text("Its items will move to Ungrouped. Apps and favorites will stay. You can undo this deletion in Groups.") }
+    }
+}
+
+struct LokiTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration.textFieldStyle(.plain).font(.system(size: 13))
+            .padding(.horizontal, 12).frame(height: LokiStyle.controlHeight)
+            .background(LokiStyle.background.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.12)))
+    }
+}
+
+struct DestructiveButton: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 14).frame(height: LokiStyle.controlHeight)
+            .foregroundStyle(LokiStyle.danger)
+            .background(LokiStyle.danger.opacity(configuration.isPressed ? 0.25 : 0.12), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(LokiStyle.danger.opacity(0.25)))
+            .opacity(enabled ? 1 : 0.4)
+    }
+}
+
+struct GroupSelector: View {
+    @ObservedObject var model: AppModel
+    @State private var showing = false
+    var body: some View {
+        Button { showing.toggle() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "folder")
+                Text(model.selectedGroup == "All" ? "Groups" : model.selectedGroup).lineLimit(1).truncationMode(.tail)
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+            }.font(.system(size: 11, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 7)
+                .foregroundStyle(model.selectedGroup == "All" ? LokiStyle.muted : model.accent)
+                .background(model.selectedGroup == "All" ? LokiStyle.surface : model.accent.opacity(0.09), in: Capsule())
+        }.buttonStyle(.plain).frame(maxWidth: 122)
+            .accessibilityLabel("Group filter: \(model.selectedGroup)")
+            .popover(isPresented: $showing, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ScrollView {
+                        VStack(spacing: 3) {
+                            ForEach(["All"] + model.realm.availableGroups + ["Ungrouped"], id: \.self) { name in
+                                Button { model.selectedGroup = name; showing = false } label: {
+                                    HStack {
+                                        Text(name).lineLimit(2).multilineTextAlignment(.leading)
+                                        Spacer(minLength: 8)
+                                        if model.selectedGroup == name { Image(systemName: "checkmark").foregroundStyle(model.accent) }
+                                    }.font(.system(size: 12)).padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                        .background(model.selectedGroup == name ? model.accent.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }.frame(maxHeight: 260)
+                    Divider()
+                    Button { showing = false; model.page = "groups"; (NSApp.delegate as? AppDelegate)?.showMainWindow() } label: {
+                        Label("Manage groups…", systemImage: "slider.horizontal.3").font(.system(size: 12)).padding(10)
+                    }.buttonStyle(.plain).foregroundStyle(model.accent)
+                }.padding(8).frame(width: 240).foregroundStyle(LokiStyle.text).preferredColorScheme(.dark)
+            }
+    }
+}
+
+struct UpdateSettingsView: View {
+    @ObservedObject var updater: UpdateController
+    let accent: Color
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("UPDATES").font(.system(size: 9, weight: .bold)).tracking(2).foregroundStyle(LokiStyle.muted)
+            Toggle("Check for updates automatically", isOn: Binding(get: { updater.automaticChecks }, set: updater.setAutomaticChecks))
+                .toggleStyle(.switch).tint(accent)
+            Text("Updates are downloaded and verified before installation. Loki will ask before installing and relaunching. Checks contact the public update feed on GitHub; no shelf or group data is sent.")
+                .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+            Button("Check for updates…") { updater.checkForUpdates() }
+                .buttonStyle(AccentButton(color: accent)).disabled(!updater.canCheck)
+        }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
     }
 }

@@ -72,6 +72,7 @@ enum MenuDiscovery {
             let name = app.localizedName ?? "Utility"
             let bundle = app.bundleIdentifier ?? "process.\(name)"
             let isAgent = name == "MenuBarAgent" || bundle.localizedCaseInsensitiveContains("menubaragent")
+            let isSystem = isAgent || bundle == "com.apple.controlcenter" || bundle == "com.apple.systemuiserver"
             var roots: [AXUIElement] = []
             var extra: CFTypeRef?
             let result = AXUIElementCopyAttributeValue(root, kAXExtrasMenuBarAttribute as CFString, &extra)
@@ -91,8 +92,9 @@ enum MenuDiscovery {
                 let role = string(element, kAXRoleAttribute)
                 if role == kAXMenuBarItemRole || (isAgent && role == kAXButtonRole && depth > 0) {
                     let identifier = string(element, kAXIdentifierAttribute)
-                    let title = [string(element, kAXDescriptionAttribute), string(element, kAXTitleAttribute), string(element, kAXHelpAttribute)]
-                        .first(where: { !$0.isEmpty }) ?? name
+                    guard let title = MenuLabel.resolve(identifier: identifier,
+                        title: string(element, kAXTitleAttribute), description: string(element, kAXDescriptionAttribute),
+                        help: string(element, kAXHelpAttribute), owner: name, system: isSystem) else { continue }
                     guard title != "Loki", title != "Apple", title != "Apple menu", title != "",
                           !identifier.contains(Bundle.main.bundleIdentifier ?? "io.github.ChaosDeSelva.Loki") else { continue }
                     let identity = identifier.isEmpty ? title : identifier
@@ -101,10 +103,10 @@ enum MenuDiscovery {
                     occurrences[base] = occurrence + 1
                     // System controls are mirrored across displays but represent
                     // one logical item. Never suffix those duplicate discoveries.
-                    let id = isAgent || occurrence == 0 ? base : "\(base):\(occurrence)"
+                    let id = isSystem ? MenuLabel.systemID(identifier: identifier, title: title) : (occurrence == 0 ? base : "\(base):\(occurrence)")
                     if seen.insert(id).inserted {
-                        items.append(ShelfItem(id: id, title: String(title.prefix(100)), appName: isAgent ? "Menu bar" : name,
-                            bundleID: bundle, pid: app.processIdentifier, icon: isAgent ? nil : app.icon,
+                        items.append(ShelfItem(id: id, title: String(title.prefix(100)), appName: isSystem ? "Menu bar" : name,
+                            bundleID: bundle, pid: app.processIdentifier, icon: isSystem ? nil : app.icon,
                             element: element, kind: .menu))
                     }
                 } else if depth < 4 {

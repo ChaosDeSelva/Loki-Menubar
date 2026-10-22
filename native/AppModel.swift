@@ -17,6 +17,12 @@ final class AppModel: ObservableObject {
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
     @Published var shortcutRegistered = false
     let visibility = VisibilityController()
+    @Published private var deletedGroup: (realmID: String, name: String, members: [String])?
+    var canUndoGroupDeletion: Bool {
+        guard let deletedGroup, deletedGroup.realmID == realm.id else { return false }
+        return !realm.availableGroups.contains { $0.compare(deletedGroup.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+    }
+    let updater = UpdateController()
     var summon: (() -> Void)?
     var dismissShelf: (() -> Void)?
     private let store: PreferenceStore
@@ -28,7 +34,10 @@ final class AppModel: ObservableObject {
 
     init(store: PreferenceStore = PreferenceStore()) {
         self.store = store
-        do { preferences = try store.load() }
+        do {
+            preferences = try store.load()
+            if preferences.migrateSystemItemIDs() { try store.save(preferences) }
+        }
         catch { notice = error.localizedDescription; canSave = false }
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
                      NSWorkspace.didWakeNotification, NSWorkspace.activeSpaceDidChangeNotification] {
@@ -79,10 +88,24 @@ final class AppModel: ObservableObject {
         var candidate = preferences
         candidate.realms[index].removeGroup(name)
         do {
-            try store.save(candidate); preferences = candidate
+            try store.save(candidate)
+            deletedGroup = (realm.id, name, (realm.groups ?? [:]).filter { $0.value == name }.map(\.key))
+            preferences = candidate
             if selectedGroup == name { selectedGroup = "All" }
             notice = nil
         } catch { notice = "Could not save your changes: \(error.localizedDescription)" }
+    }
+    func undoGroupDeletion() {
+        guard canSave, let deleted = deletedGroup, deleted.realmID == realm.id,
+              let index = preferences.realms.firstIndex(where: { $0.id == deleted.realmID }) else { return }
+        do {
+            var candidate = preferences
+            _ = try candidate.realms[index].setGroupName(deleted.name)
+            var assignments = candidate.realms[index].groups ?? [:]
+            for id in deleted.members where assignments[id] == nil { assignments[id] = deleted.name }
+            candidate.realms[index].groups = assignments
+            try store.save(candidate); preferences = candidate; deletedGroup = nil; notice = nil
+        } catch { notice = error.localizedDescription }
     }
     func group(_ bundleID: String, name: String) {
         guard let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return }

@@ -6,6 +6,7 @@ final class VisibilityController: NSObject, ObservableObject {
     @Published private(set) var concealed = false
     @Published private(set) var managing = false
     @Published private(set) var failure: String?
+    var supported: Bool { ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 }
     private var divider: NSStatusItem?
     private weak var anchor: NSStatusItem?
     private var timer: Timer?
@@ -19,13 +20,19 @@ final class VisibilityController: NSObject, ObservableObject {
 
     func start(delay: TimeInterval, autoRehide: Bool) {
         stop()
+        guard supported else {
+            failure = "Icon hiding is unavailable on macOS 27 in this build. Use macOS Menu Bar settings to choose which controls appear."
+            return
+        }
         self.delay = max(1, min(30, delay))
         self.autoRehide = autoRehide
         failure = nil
         let item = NSStatusBar.system.statusItem(withLength: 22)
         item.autosaveName = "LokiDivider"
+        item.isVisible = true
         if let button = item.button {
-            button.title = "│"
+            button.image = NSImage(systemSymbolName: "line.3.horizontal.decrease", accessibilityDescription: "Loki divider")
+            button.image?.isTemplate = true
             button.toolTip = "Loki divider · Command-drag icons to its left to tuck them away. Click to reveal."
             button.setAccessibilityLabel("Loki divider")
             button.target = self
@@ -61,8 +68,8 @@ final class VisibilityController: NSObject, ObservableObject {
         }
         guard Date().timeIntervalSince(lastInteraction) >= delay,
               !concealed, awaitingFirstHide else { return }
-        guard let anchorFrame = anchor?.button?.window?.frame,
-              let dividerFrame = divider?.button?.window?.frame,
+        guard let anchorFrame = Self.frame(of: anchor),
+              let dividerFrame = Self.frame(of: divider),
               dividerFrame.midX < anchorFrame.midX else {
             failure = "Command-drag the divider to the left of Loki’s icon, then try Tuck icons again."
             awaitingFirstHide = false
@@ -73,13 +80,18 @@ final class VisibilityController: NSObject, ObservableObject {
         if !autoRehide { awaitingFirstHide = false }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self, self.concealed else { return }
-            guard let frame = self.anchor?.button?.window?.frame,
+            guard let frame = Self.frame(of: self.anchor),
                   NSScreen.screens.contains(where: { $0.frame.intersects(frame) && frame.width > 0 }) else {
                 self.reveal(); self.awaitingFirstHide = false
                 self.failure = "This display layout cannot keep Loki visible. Icons have been revealed."
                 return
             }
         }
+    }
+
+    private static func frame(of item: NSStatusItem?) -> CGRect? {
+        guard let button = item?.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
     private static var popupIsVisible: Bool {

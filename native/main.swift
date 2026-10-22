@@ -143,12 +143,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         }) { dismissalMonitors.append(monitor) }
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown], handler: { [weak self] event in
             guard let self, self.popover.isShown else { return event }
-            if event.type == .keyDown && event.keyCode == 53 {
+            if event.type == .keyDown && event.keyCode == 53 && event.window === self.popover.contentViewController?.view.window {
                 self.closeShelf(); return nil
             }
-            if event.type != .keyDown,
-               event.window !== self.popover.contentViewController?.view.window,
-               event.window !== self.statusItem.button?.window {
+            if event.type != .keyDown, event.window === self.mainWindow {
                 self.closeShelf()
             }
             return event
@@ -196,7 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     @objc private func summonShelf() { toggleShelf() }
     @objc private func revealAll() { model.visibility.stop() }
     @objc private func openSettings() { model.page = "settings"; showMainWindow() }
-    @objc private func checkUpdates() { NSWorkspace.shared.open(URL(string: "https://github.com/ChaosDeSelva/Loki-Menubar/releases")!) }
+    @objc private func checkUpdates() { model.updater.checkForUpdates() }
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Loki", .applicationVersion: "0.1.0", .credits: NSAttributedString(string: "A little order. A little mischief.\nA native, local menu utility for your Mac.")])
     }

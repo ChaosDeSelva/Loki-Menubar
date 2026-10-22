@@ -6,11 +6,11 @@ This is a preview release. “Implemented” describes code, not proof across al
 
 Checked on Apple Silicon / macOS 27.0.1:
 
-- Signed build compiles; 35 search, ordering, geometry, grouping, and persistence regression checks pass.
+- Signed build compiles; 42 search, ordering, geometry, grouping, and persistence regression checks pass.
 - The menu-extra scan yields one Clock and no Apple-menu entries in the observed setup (previous prototype incorrectly produced dozens of duplicates).
 - Escape closes the shelf, verified through the app’s independent `--status` response. The close control also removes Loki’s visible window.
 - Selecting Control Center opens a Control Center panel and leaves Loki’s shelf closed. A subsequent automation inspection timed out; this is not a claim of broad third-party menu compatibility.
-- Divider setup, tuck, status, and reveal-all commands run. **Actual rendered hiding/hover behavior is not fully verified on macOS 27**; automation screenshots of the composited menu bar were inconclusive.
+- **macOS 27 divider hiding is unavailable.** The UI now blocks this path instead of reporting false success. The older spacer path is limited to macOS 14–26 and still requires hardware qualification.
 - A preexisting orphaned menu was traced to its owning UI process and cleared. That recovery does not establish a root cause or prove recurrence impossible.
 
 No notched-MacBook, Intel, older-macOS, sleep/wake soak, or long-running multi-display qualification has been completed.
@@ -21,7 +21,7 @@ No notched-MacBook, Intel, older-macOS, sleep/wake soak, or long-running multi-d
 | --- | --- |
 | Searchable list / keyboard navigation / favorites | Implemented |
 | Menu-only launch and dropdown | Implemented |
-| Physical icon hiding | Divider compatibility preview; manual setup; visual validation pending |
+| Physical icon hiding | Unavailable on macOS 27; experimental manual divider on macOS 14–26 |
 | Hover reveal / delay / reveal all | Implemented in divider controller; full visual validation pending |
 | Physical icon arrangement | macOS Command-drag only |
 | Always-hidden section | Not implemented |
@@ -30,7 +30,7 @@ No notched-MacBook, Intel, older-macOS, sleep/wake soak, or long-running multi-d
 | Per-display automatic profiles | Not implemented |
 | Customizable shortcuts / individual item hotkeys | Not implemented; fixed summon shortcut |
 | System-bar appearance, shape, spacing | Not implemented |
-| Updates | Manual releases link; no self-updater |
+| Updates | Sparkle signed download, install, and relaunch; automatic checks opt-in |
 | CLI / diagnostics | Local reveal, shelf, settings, status and count-only diagnostics |
 | Export/import, localization, sync | Not implemented |
 
@@ -46,7 +46,7 @@ No notched-MacBook, Intel, older-macOS, sleep/wake soak, or long-running multi-d
 | Item persistence | Saved shelf identifiers survive temporary absence. macOS controls physical icon placement. |
 | Organization | Shelf groups and realms are implemented. Physical per-display profiles remain absent. |
 | Automation | A small local CLI without a network listener. |
-| Updates | Manual browser-based release lookup, without a modal updater. |
+| Updates | Sparkle with pinned dependency, archive signature validation, and optional automatic checks. |
 | Performance | Bounded background discovery and a timer only during divider management. Long-duration profiling is pending. |
 
 System privacy indicators remain owned by macOS. Wallpaper overlays, widgets, animated icons, and cloud accounts are outside the focused release scope.
@@ -58,3 +58,7 @@ Prove hiding/reveal/recovery on supported OS and display combinations; support i
 ## Alpha 2 validation
 
 Custom group lifecycle, migration, invalid names, offline assignments, realm isolation, and persistence are covered by the 35-check suite. The signed app builds and responds to its status command. Interactive group-editor verification was blocked by a timeout in the UI automation service; this release remains an alpha.
+
+## Alpha 3 validation
+
+The layout was rendered from SwiftUI and inspected for form alignment, compact header/footer, and toolbar spacing. The Superpowers independent review led to canonical system-item IDs with legacy preference migration, nested-popover Escape handling, and suppression of stale undo actions. macOS 27 hiding remains explicitly unavailable.

@@ -69,6 +69,28 @@ struct Preferences: Codable {
     var source = "menu"
     var rehideDelay: Double? = nil
     var autoRehide: Bool? = nil
+
+    mutating func migrateSystemItemIDs() -> Bool {
+        let before = realms
+        for index in realms.indices {
+            func unique(_ ids: [String]) -> [String] {
+                var seen = Set<String>()
+                return ids.map(MenuLabel.migratedID).filter { seen.insert($0).inserted }
+            }
+            realms[index].pins = unique(realms[index].pins)
+            realms[index].order = unique(realms[index].order)
+            if let groups = realms[index].groups {
+                var migrated: [String: String] = [:]
+                // An existing canonical assignment wins if old mirrored hosts disagree.
+                for id in groups.keys.sorted(by: { ($0.hasPrefix("menu:system:") ? 0 : 1, $0) < ($1.hasPrefix("menu:system:") ? 0 : 1, $1) }) {
+                    let key = MenuLabel.migratedID(id)
+                    if migrated[key] == nil { migrated[key] = groups[id] }
+                }
+                realms[index].groups = migrated
+            }
+        }
+        return realms != before
+    }
 }
 
 enum ShelfEngine {

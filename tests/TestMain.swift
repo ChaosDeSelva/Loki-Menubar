@@ -83,6 +83,16 @@ enum Tests {
         preferences.realms[0] = custom; try store.save(preferences)
         let emptyGroups = try store.load()
         check("Deleted defaults stay deleted after restart", emptyGroups.realms[0].availableGroups.isEmpty)
+        check("Specific system title beats generic host description", MenuLabel.resolve(identifier: "", title: "Wi-Fi", description: "Control Center", help: "", owner: "Control Center", system: true) == "Wi-Fi")
+        check("System identifier resolves unnamed battery", MenuLabel.resolve(identifier: "com.apple.controlcenter.Battery", title: "", description: "Control Center", help: "", owner: "Control Center", system: true) == "Battery")
+        check("Unknown system proxies are omitted", MenuLabel.resolve(identifier: "proxy-3", title: "", description: "", help: "", owner: "MenuBarAgent", system: true) == nil)
+        check("Third party owner fallback retained", MenuLabel.resolve(identifier: "", title: "", description: "", help: "", owner: "Example", system: false) == "Example")
+        check("System identity survives host fallback", MenuLabel.systemID(identifier: "com.apple.controlcenter.WiFi", title: "Wi-Fi") == MenuLabel.systemID(identifier: "", title: "Wi-Fi"))
+        var migration = Preferences()
+        migration.realms[0].pins = ["menu:com.apple.controlcenter:com.apple.controlcenter.WiFi", "menu:system:wifi"]
+        migration.realms[0].groups = ["menu:com.apple.MenuBarAgent:Battery": "Work"]
+        check("Existing system preferences migrate", migration.migrateSystemItemIDs() && migration.realms[0].pins == ["menu:system:wifi"] && migration.realms[0].groups?["menu:system:battery"] == "Work")
+        check("System ID migration is idempotent", !migration.migrateSystemItemIDs())
         print("\(passed) tests passed")
     }
 }

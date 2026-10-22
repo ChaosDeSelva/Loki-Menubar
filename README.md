@@ -6,7 +6,7 @@ A little order. A little mischief. An original Swift/AppKit menu-bar utility for
 
 ## Release status
 
-**0.1.0-alpha.2 is an early preview.** Apple Silicon; macOS 14 or later. Release checks ran on macOS 27.0.1. Earlier macOS versions and notched MacBooks are not yet verified. See the explicit feature gaps below before installing.
+**0.1.0-alpha.3 is an early preview.** Apple Silicon; macOS 14 or later. Release checks ran on macOS 27.0.1. Earlier macOS versions and notched MacBooks are not yet verified. See the explicit feature gaps below before installing.
 
 ## What is included
 
@@ -20,7 +20,7 @@ A little order. A little mischief. An original Swift/AppKit menu-bar utility for
 - A **compatibility-preview divider** for tucking icons; hover reveal, delayed rehide, and reveal-all recovery.
 - Launch at login, three accent colors, local preferences, and preservation of corrupted settings files.
 - CLI commands for the shelf, settings, reveal-all, and privacy-limited diagnostics.
-- No analytics, accounts, third-party runtime dependencies, screen capture, private frameworks, or automatic downloads.
+- No analytics, accounts, screen capture, or private frameworks. Sparkle is the bundled update dependency; automatic checks are opt-in.
 
 ## Install
 
@@ -28,25 +28,25 @@ Download the Apple Silicon DMG from [Releases](https://github.com/ChaosDeSelva/L
 
 App shortcuts do not need Accessibility. Menu extras do: in **Menu items**, choose **Allow Accessibility** and enable the installed app in System Settings. A previous development build may have a different bundle identifier and permission entry; the public release uses `io.github.ChaosDeSelva.Loki`.
 
-## Tuck icons (compatibility preview)
+## Tuck icons (macOS 14–26 compatibility preview)
 
 1. Open **Menu bar → Show divider**.
-2. Hold Command and drag the `│` divider to the **left** of Loki’s rune icon.
+2. Hold Command and drag the filter-shaped divider to the **left** of Loki’s rune icon.
 3. Command-drag the icons you want tucked away to the left of that divider.
 4. Choose **Tuck icons** and move the pointer away from the menu bar.
 5. Hover near the top of a display to reveal. Open Loki or choose **Reveal All Menu Bar Items** to recover.
 
-The divider changes the width of an ordinary `NSStatusItem`. macOS owns placement; some icons cannot be moved. The preview does not implement a private macOS 27 assessment-mode workaround. Visual hiding across macOS 27 displays remains unverified; do not rely on it for a production layout. Hiding never starts automatically at launch. Display changes, sleep, and quitting stop it; Space changes reveal icons. Rehide waits while a popup, mouse press, or Command-drag is detected. **Reveal All** removes the divider entirely.
+The divider changes the width of an ordinary `NSStatusItem`. macOS owns placement; some icons cannot be moved. The preview does not implement a private macOS 27 assessment-mode workaround. The divider is disabled on macOS 27 because it does not reliably hide icons. On macOS 14–26 it remains an experimental feature, not a qualified production layout. Hiding never starts automatically at launch. Display changes, sleep, and quitting stop it; Space changes reveal icons. Rehide waits while a popup, mouse press, or Command-drag is detected. **Reveal All** removes the divider entirely.
 
 ## Current limitations
 
-No always-hidden tier, automatic physical-icon sorting, per-display layouts, icon image replication below a notch, custom global shortcut editor, spacing/tint/shape customization of the system bar, or self-updater. Realms and groups organize Loki’s shelf, not the physical system menu bar. Hidden/notch-obscured items must first be visible before Loki can click them. Some apps expose incomplete Accessibility labels or no position. Multi-monitor and full-screen behavior needs broader verification.
+No always-hidden tier, automatic physical-icon sorting, per-display layouts, icon image replication below a notch, custom global shortcut editor, spacing/tint/shape customization of the system bar, or background physical-layout automation. Realms and groups organize Loki’s shelf, not the physical system menu bar. Hidden/notch-obscured items must first be visible before Loki can click them. Some apps expose incomplete Accessibility labels or no position. Multi-monitor and full-screen behavior needs broader verification.
 
 Loki is an independently developed utility. Its supported capabilities and remaining work are documented in the compatibility ledger.
 
 ## Build from source
 
-Requires Apple Silicon, Xcode command-line tools, and Swift. No package downloads are needed.
+Requires Apple Silicon, Xcode command-line tools, and Swift. The first build downloads the checksum-pinned Sparkle framework from its official release.
 
 ```sh
 bash scripts/test.sh
@@ -86,3 +86,9 @@ To uninstall: disable launch at login, quit Loki (which removes its divider), th
 Read [CONTRIBUTING.md](CONTRIBUTING.md). Code and vector artwork are under [MIT](LICENSE). The folded-rune design was developed with AI-assisted concept exploration and recreated as vector paths; no third-party logo artwork is included. No trademark clearance is implied.
 
 See [the roadmap](ROADMAP.md) for prioritized improvements and release-quality criteria.
+
+### Alpha 3 fixes
+
+Compact popup controls, consistent form heights, group deletion confirmation and session undo, improved system-menu labels, and signed in-app updates. Automatic update checks are opt-in in Settings.
+
+**macOS 27:** divider hiding is unavailable in this build. Earlier builds could report a hiding request as success; this version explicitly explains the limitation and opens macOS Menu Bar settings. Groups organize the shelf, not physical status items. The divider remains experimental on macOS 14–26.
