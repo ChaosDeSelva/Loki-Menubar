@@ -58,7 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
                 guard let request = notification.userInfo?["request"] as? String else { return }
                 DistributedNotificationCenter.default().postNotificationName(Notification.Name("LokiStatus"), object: request,
                     userInfo: ["managing": self.model.visibility.managing, "concealed": self.model.visibility.concealed,
-                               "message": self.model.visibility.failure ?? "", "shelfOpen": self.popover.isShown], deliverImmediately: true)
+                               "message": self.model.visibility.failure ?? "", "shelfOpen": self.popover.isShown, "applying": self.model.visibility.applying,
+                               "hidingSupported": self.model.visibility.supported, "hidingBackend": self.model.visibility.modern ? "app-selection" : "divider"], deliverImmediately: true)
             default: break
             }
             }

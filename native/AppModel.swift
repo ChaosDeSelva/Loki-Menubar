@@ -114,8 +114,27 @@ final class AppModel: ObservableObject {
         groups[bundleID] = name == "Ungrouped" ? nil : name
         preferences.realms[index].groups = groups; save()
     }
+    func setTucked(_ bundle: String, hidden: Bool) {
+        guard bundle != Bundle.main.bundleIdentifier, !bundle.hasPrefix("com.apple."),
+              let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return }
+        visibility.stop()
+        var selected = Set(preferences.realms[index].tuckedApps ?? [])
+        if hidden { selected.insert(bundle) } else { selected.remove(bundle) }
+        preferences.realms[index].tuckedApps = selected.sorted()
+        save()
+    }
+    var hidingApps: [(id: String, name: String)] {
+        var apps: [String: String] = [:]
+        for app in NSWorkspace.shared.runningApplications where !app.isTerminated {
+            guard let id = app.bundleIdentifier, id != Bundle.main.bundleIdentifier,
+                  !id.hasPrefix("com.apple."), app.activationPolicy != .prohibited else { continue }
+            apps[id] = app.localizedName ?? id
+        }
+        for id in realm.tuckedApps ?? [] where apps[id] == nil { apps[id] = id + " (not running)" }
+        return apps.map { (id: $0.key, name: $0.value) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
     func startVisibility() {
-        visibility.start(delay: preferences.rehideDelay ?? 3, autoRehide: preferences.autoRehide ?? true)
+        visibility.start(delay: preferences.rehideDelay ?? 3, autoRehide: preferences.autoRehide ?? true, hiddenBundles: Set(realm.tuckedApps ?? []))
     }
     func pin(_ id: String) {
         guard let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return }

@@ -8,7 +8,9 @@ let package = Package(
     products: [.executable(name: "Loki", targets: ["Loki"])],
     dependencies: [.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")],
     targets: [
-        .executableTarget(name: "Loki", dependencies: [.product(name: "Sparkle", package: "Sparkle")], path: "native", linkerSettings: [
+        .target(name: "LokiMenuBarBridge", path: "nativeBridge", publicHeadersPath: "include",
+                cSettings: [.unsafeFlags(["-fobjc-arc"])]),
+        .executableTarget(name: "Loki", dependencies: ["LokiMenuBarBridge", .product(name: "Sparkle", package: "Sparkle")], path: "native", linkerSettings: [
             .linkedFramework("AppKit"), .linkedFramework("SwiftUI"),
             .linkedFramework("ApplicationServices"), .linkedFramework("Carbon"),
             .linkedFramework("ServiceManagement")

@@ -114,6 +114,13 @@ enum Tests {
         _ = MenuIdentity.nextOccurrence(identifier: "", title: "upload", counters: &counters)
         check("Unnamed labels cannot renumber identified extras", MenuIdentity.nextOccurrence(identifier: "upload", title: "Rate", counters: &counters) == 0)
         check("Duplicate identified extras remain distinct", MenuIdentity.nextOccurrence(identifier: "upload", title: "Other", counters: &counters) == 1)
+        let allowed = VisibilityPlan.allowed(running: ["one", "two", "one", "com.apple.controlcenter"], hidden: ["one", "self", "com.apple.controlcenter"], ownBundle: "self")
+        check("Hiding preserves owner and system controls", allowed == ["com.apple.controlcenter", "self", "two"])
+        check("New apps remain visible by default", VisibilityPlan.allowed(running: ["new"], hidden: ["old"], ownBundle: "self") == ["new", "self"])
+        var tucked = Preferences()
+        tucked.realms[0].tuckedApps = ["one"]
+        let tuckedReloaded = try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(tucked))
+        check("Hiding selection persists independently per realm", tuckedReloaded.realms[0].tuckedApps == ["one"] && tuckedReloaded.realms[1].tuckedApps == nil)
         print("\(passed) tests passed")
     }
 }

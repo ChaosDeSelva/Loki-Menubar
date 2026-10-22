@@ -176,3 +176,10 @@ final class PreferenceStore {
         try encoder.encode(state).write(to: url, options: .atomic)
     }
 }
+
+/// Public UI choices remain bundle IDs. Unknown and newly launched apps are visible.
+enum VisibilityPlan {
+    static func allowed(running: [String], hidden: Set<String>, ownBundle: String) -> [String] {
+        Set(running + [ownBundle]).filter { !hidden.contains($0) || $0 == ownBundle || $0.hasPrefix("com.apple.") }.sorted()
+    }
+}

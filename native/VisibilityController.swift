@@ -1,12 +1,16 @@
 import AppKit
 
-/// Uses an ordinary status-item spacer; no private frameworks or assessment mode.
-/// Only the icons the user places to the left of the divider are tucked away.
+/// Restores icons before shutdown, session changes, or configuration changes.
 final class VisibilityController: NSObject, ObservableObject {
     @Published private(set) var concealed = false
     @Published private(set) var managing = false
     @Published private(set) var failure: String?
-    var supported: Bool { ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 }
+    var modern: Bool { ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 }
+    var supported: Bool { !modern || MenuBarVisibility.available }
+    @Published private(set) var applying = false
+    private let backend = MenuBarVisibility()
+    private var hiddenBundles = Set<String>()
+    private var generation = 0
     private var divider: NSStatusItem?
     private weak var anchor: NSStatusItem?
     private var timer: Timer?
@@ -18,15 +22,21 @@ final class VisibilityController: NSObject, ObservableObject {
 
     func configure(anchor: NSStatusItem) { self.anchor = anchor }
 
-    func start(delay: TimeInterval, autoRehide: Bool) {
+    func start(delay: TimeInterval, autoRehide: Bool, hiddenBundles: Set<String> = []) {
         stop()
         guard supported else {
-            failure = "Icon hiding is unavailable on macOS 27 in this build. Use macOS Menu Bar settings to choose which controls appear."
+            failure = "This macOS build does not expose the expected hiding controls. All icons remain visible."
             return
         }
         self.delay = max(1, min(30, delay))
         self.autoRehide = autoRehide
         failure = nil
+        self.hiddenBundles = hiddenBundles
+        if modern && hiddenBundles.isEmpty {
+            failure = "Choose at least one app to tuck away."
+            return
+        }
+        if !modern {
         let item = NSStatusBar.system.statusItem(withLength: 22)
         item.autosaveName = "LokiDivider"
         item.isVisible = true
@@ -39,6 +49,7 @@ final class VisibilityController: NSObject, ObservableObject {
             button.action = #selector(dividerClicked)
         }
         divider = item
+        }
         managing = true
         // First start is setup-only: the user must explicitly choose Tuck icons.
         lastInteraction = Date()
@@ -62,12 +73,33 @@ final class VisibilityController: NSObject, ObservableObject {
         guard managing else { return }
         if Self.pointerNearMenuBar || NSApp.isActive || NSEvent.pressedMouseButtons != 0 ||
             NSEvent.modifierFlags.contains(.command) || Self.popupIsVisible {
-            if concealed { reveal() }
+            if concealed || applying { reveal() }
             lastInteraction = Date()
             return
         }
         guard Date().timeIntervalSince(lastInteraction) >= delay,
-              !concealed, awaitingFirstHide else { return }
+              !concealed, !applying, awaitingFirstHide else { return }
+        if modern {
+            applying = true
+            generation += 1
+            let request = generation
+            backend.hide(hiddenBundles) { [weak self] error in
+                guard let self, self.generation == request, self.managing else { return }
+                self.applying = false
+                if let error {
+                    self.reveal(); self.awaitingFirstHide = false; self.failure = error
+                } else {
+                    self.concealed = true
+                    if !self.autoRehide { self.awaitingFirstHide = false }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self, self.generation == request, self.applying else { return }
+                self.reveal(); self.awaitingFirstHide = false
+                self.failure = "macOS did not confirm hiding. Icons have been revealed."
+            }
+            return
+        }
         guard let anchorFrame = Self.frame(of: anchor),
               let dividerFrame = Self.frame(of: divider),
               dividerFrame.midX < anchorFrame.midX else {
@@ -112,6 +144,9 @@ final class VisibilityController: NSObject, ObservableObject {
     }
 
     func reveal() {
+        generation += 1
+        backend.reveal()
+        applying = false
         divider?.length = 22
         concealed = false
         lastInteraction = Date()
@@ -130,12 +165,21 @@ final class VisibilityController: NSObject, ObservableObject {
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
             notifications.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.stop() })
         }
+        // Drop the allowlist when processes change: newly launched utilities must
+        // never disappear simply because they were absent from the previous snapshot.
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            notifications.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                guard let self, self.modern else { return }
+                self.reveal()
+            })
+        }
         notifications.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.reveal() })
         notifications.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.stop() })
     }
 
     deinit {
         timer?.invalidate()
+        backend.reveal()
         if let divider { NSStatusBar.system.removeStatusItem(divider) }
         for observer in notifications {
             NotificationCenter.default.removeObserver(observer)

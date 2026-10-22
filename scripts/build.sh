@@ -9,7 +9,8 @@ if [[ "${LOKI_SIGN_IDENTITY:--}" != "-" ]]; then
   LOKI_SIGN_OPTIONS+=(--options runtime --timestamp)
 fi
 mkdir -p "$LOKI_APP/Contents/Frameworks" "$LOKI_APP/Contents/MacOS" "$LOKI_APP/Contents/Resources" "$LOKI_BUILD/module-cache"
-swiftc -O -swift-version 5 -target arm64-apple-macos14.0 \
+clang -fobjc-arc -O2 -mmacosx-version-min=14.0 -I "$LOKI_ROOT/nativeBridge/include" -c "$LOKI_ROOT/nativeBridge/LOKMenuBarBridge.m" -o "$LOKI_BUILD/MenuBarBridge.o"
+swiftc -import-objc-header "$LOKI_ROOT/nativeBridge/include/LOKMenuBarBridge.h" "$LOKI_BUILD/MenuBarBridge.o" -O -swift-version 5 -target arm64-apple-macos14.0 \
   -module-cache-path "$LOKI_BUILD/module-cache" \
   -F "$LOKI_ROOT/build/vendor/Sparkle" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -framework AppKit -framework SwiftUI -framework ApplicationServices -framework Carbon -framework ServiceManagement \
@@ -24,7 +25,7 @@ cat > "$LOKI_APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Loki</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleVersion</key><string>7</string>
 <key>SUFeedURL</key><string>https://chaosdeselva.github.io/Loki-Menubar/appcast.xml</string>
 <key>SUPublicEDKey</key><string>lQmA4X8FRIxdccivd/2WVfXK6Pk9X9PIzoiV4H5MWso=</string>
 <key>SUEnableAutomaticChecks</key><false/>

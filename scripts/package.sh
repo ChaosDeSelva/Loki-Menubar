@@ -3,7 +3,7 @@ set -euo pipefail
 LOKI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOKI_APP="${LOKI_BUILD_DIR:-$LOKI_ROOT/build}/Loki.app"
 LOKI_DEST="${1:-$LOKI_ROOT/build/release}"
-LOKI_VERSION="0.1.0-alpha.4"
+LOKI_VERSION="0.1.0-alpha.5"
 test -d "$LOKI_APP" || { echo 'Build Loki.app first.' >&2; exit 1; }
 mkdir -p "$LOKI_DEST"
 LOKI_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/loki-dmg.XXXXXX")"

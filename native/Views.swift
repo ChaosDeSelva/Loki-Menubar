@@ -421,7 +421,7 @@ struct SettingsView: View {
                     Label("Local by design", systemImage: "lock.shield").font(.system(size: 13, weight: .medium)).foregroundStyle(model.accent)
                     Text("Loki stores your realms on this Mac. It has no analytics, cloud service, or screen capture. Menu discovery uses Accessibility only when you select Menu items.")
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    Text("Icon hiding uses a menu-bar divider. Set it up in Menu bar. Hover near the menu bar to reveal; display changes and quitting Loki restore all icons.")
+                    Text("Choose apps to hide in Menu bar on macOS 27; earlier versions use a divider. Hover near the menu bar to reveal. Display changes and quitting Loki restore icons.")
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                     Button("Open settings folder") { model.openSettingsFolder() }.buttonStyle(.plain).foregroundStyle(model.accent).font(.system(size: 12))
                 }
@@ -459,15 +459,24 @@ struct MenuBarView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("Room for a little mischief.").font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
-                Text("Keep everyday icons in sight. Tuck the rest behind a divider.")
+                Text(visibility.modern ? "Keep everyday icons in sight. Choose the apps to tuck away." : "Keep everyday icons in sight. Tuck the rest behind a divider.")
                     .foregroundStyle(LokiStyle.muted)
                 VStack(alignment: .leading, spacing: 16) {
                     Label("Set up your menu bar", systemImage: "menubar.rectangle").font(.headline)
-                    if visibility.supported {
+                    if visibility.modern && visibility.supported {
+                        Text("Choose apps below, then click Tuck icons. Close this window and move away from the menu bar. Hover near the menu bar to reveal them.")
+                            .font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                        Text("All icons from each selected app hide together, on every display. Apple system controls and Loki stay available. Apps without menu icons are unaffected.")
+                            .font(.caption).foregroundStyle(LokiStyle.muted)
+                        ForEach(model.hidingApps, id: \.id) { app in
+                            Toggle(app.name, isOn: Binding(get: { model.realm.tuckedApps?.contains(app.id) ?? false }, set: { model.setTucked(app.id, hidden: $0) }))
+                                .toggleStyle(.switch).tint(model.accent).font(.system(size: 13))
+                        }
+                    } else if visibility.supported {
                     Text("1. Show the divider.\n2. Hold Command and drag the filter-shaped divider to the left of Loki’s icon.\n3. Command-drag the icons you want to hide to the left of the divider.\n4. Choose Tuck icons, close this window, and move the pointer away from the menu bar.")
                         .font(.system(size: 13)).lineSpacing(7).fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Text("Loki’s divider cannot hide icons on macOS 27 yet. The previous build incorrectly reported success. Use macOS’s menu-bar settings for now; Loki’s searchable shelf and groups remain available.")
+                        Text("This macOS build does not expose the expected hiding controls. All icons remain visible; your shelf and groups still work.")
                             .font(.system(size: 13)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                     }
                     HStack {
@@ -475,6 +484,15 @@ struct MenuBarView: View {
                             Button("Open macOS Menu Bar settings") {
                                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension")!)
                             }.buttonStyle(AccentButton(color: model.accent))
+                        } else if visibility.modern {
+                            Button("Tuck icons") {
+                                model.startVisibility()
+                                visibility.tuck()
+                                (NSApp.delegate as? AppDelegate)?.hideWindows()
+                            }.buttonStyle(AccentButton(color: model.accent)).disabled((model.realm.tuckedApps ?? []).isEmpty || visibility.applying)
+                            if visibility.managing {
+                                Button("Stop hiding") { confirmStop = true }.buttonStyle(DestructiveButton())
+                            }
                         } else if visibility.managing {
                             Button("Tuck icons") { visibility.tuck(); (NSApp.delegate as? AppDelegate)?.hideWindows() }
                                 .buttonStyle(AccentButton(color: model.accent))
@@ -483,7 +501,7 @@ struct MenuBarView: View {
                             Button("Show divider") { model.startVisibility() }.buttonStyle(AccentButton(color: model.accent))
                         }
                     }
-                    Text(visibility.concealed ? "Hiding requested" : visibility.managing ? "Divider ready · icons revealed" : "All icons visible")
+                    Text(visibility.applying ? "Waiting for macOS…" : visibility.concealed ? (visibility.modern ? "Selected apps tucked away" : "Hiding requested") : visibility.managing ? "Ready · icons revealed" : "All icons visible")
                         .font(.caption).foregroundStyle(model.accent)
                     if let failure = visibility.failure { Text(failure).font(.caption).foregroundStyle(.orange) }
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
@@ -500,14 +518,14 @@ struct MenuBarView: View {
                         .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                 }.padding(20).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
                 }
-                Text("Compatibility preview: macOS controls placement and some system icons cannot be moved. A crowded or notched display may still need the searchable shelf. No screen capture or private system APIs are used.")
+                Text("Compatibility preview: macOS 27 hiding uses an undocumented system interface that may change with an OS update. Hiding is per app and applies to every display. Older macOS versions use a divider. Loki does not capture your screen.")
                     .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
             }.padding(30)
         }
-        .alert("Stop hiding and remove the divider?", isPresented: $confirmStop) {
+        .alert(visibility.modern ? "Stop hiding?" : "Stop hiding and remove the divider?", isPresented: $confirmStop) {
             Button("Cancel", role: .cancel) { }
             Button("Stop hiding", role: .destructive) { visibility.stop() }
-        } message: { Text("All icons will be revealed. You can set up the divider again later.") }
+        } message: { Text("All icons will be revealed. Your saved choices will remain available.") }
     }
 }
 
