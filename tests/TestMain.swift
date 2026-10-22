@@ -93,6 +93,27 @@ enum Tests {
         migration.realms[0].groups = ["menu:com.apple.MenuBarAgent:Battery": "Work"]
         check("Existing system preferences migrate", migration.migrateSystemItemIDs() && migration.realms[0].pins == ["menu:system:wifi"] && migration.realms[0].groups?["menu:system:battery"] == "Work")
         check("System ID migration is idempotent", !migration.migrateSystemItemIDs())
+
+        let stable = MenuIdentity.thirdParty(bundle: "example.utility", identifier: "", slot: 0)
+        var dynamic = Preferences()
+        dynamic.realms[0].pins = [stable]
+        dynamic.realms[0].groups = [stable: "Work"]
+        for title in ["Upload 1 KB/s", "Upload 2 KB/s"] {
+            let item = ShelfRecord(id: MenuIdentity.thirdParty(bundle: "example.utility", identifier: "", slot: 0), title: title, app: "Utility")
+            check("Changing title retains favorite and group", ShelfEngine.arrange([item], realm: dynamic.realms[0], query: "", favoritesOnly: true) == [stable] && dynamic.realms[0].groups?[item.id] == "Work")
+        }
+        check("Unnamed extras stay distinct", stable != MenuIdentity.thirdParty(bundle: "example.utility", identifier: "", slot: 1))
+        check("Identified extras retain existing keys", MenuIdentity.thirdParty(bundle: "example.utility", identifier: "upload", slot: 9) == "menu:example.utility:upload")
+        let legacyID = "menu:example.utility:Upload 1 KB/s"
+        dynamic.realms[0].pins = [legacyID, stable]
+        dynamic.realms[0].order = [legacyID]
+        dynamic.realms[0].groups = [legacyID: "Personal", stable: "Work"]
+        check("Legacy aliases migrate without overwriting", dynamic.migrateItemAliases([legacyID: stable]) && dynamic.realms[0].pins == [stable] && dynamic.realms[0].order == [stable] && dynamic.realms[0].groups == [stable: "Work"])
+        check("Alias migration is idempotent", !dynamic.migrateItemAliases([legacyID: stable]))
+        var counters: [String: Int] = [:]
+        _ = MenuIdentity.nextOccurrence(identifier: "", title: "upload", counters: &counters)
+        check("Unnamed labels cannot renumber identified extras", MenuIdentity.nextOccurrence(identifier: "upload", title: "Rate", counters: &counters) == 0)
+        check("Duplicate identified extras remain distinct", MenuIdentity.nextOccurrence(identifier: "upload", title: "Other", counters: &counters) == 1)
         print("\(passed) tests passed")
     }
 }

@@ -24,7 +24,7 @@ cat > "$LOKI_APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Loki</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>CFBundleVersion</key><string>5</string>
+<key>CFBundleVersion</key><string>6</string>
 <key>SUFeedURL</key><string>https://chaosdeselva.github.io/Loki-Menubar/appcast.xml</string>
 <key>SUPublicEDKey</key><string>lQmA4X8FRIxdccivd/2WVfXK6Pk9X9PIzoiV4H5MWso=</string>
 <key>SUEnableAutomaticChecks</key><false/>

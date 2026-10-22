@@ -70,6 +70,28 @@ struct Preferences: Codable {
     var rehideDelay: Double? = nil
     var autoRehide: Bool? = nil
 
+    /// Only migrate an observed legacy title; never guess which changed title
+    /// belonged to a saved item. Existing canonical assignments win conflicts.
+    mutating func migrateItemAliases(_ aliases: [String: String]) -> Bool {
+        let before = realms
+        for index in realms.indices {
+            func remap(_ ids: [String]) -> [String] {
+                var seen = Set<String>()
+                return ids.map { aliases[$0] ?? $0 }.filter { seen.insert($0).inserted }
+            }
+            realms[index].pins = remap(realms[index].pins)
+            realms[index].order = remap(realms[index].order)
+            if var groups = realms[index].groups {
+                for old in aliases.keys.sorted() {
+                    guard let value = groups.removeValue(forKey: old), let new = aliases[old] else { continue }
+                    if groups[new] == nil { groups[new] = value }
+                }
+                realms[index].groups = groups
+            }
+        }
+        return before != realms
+    }
+
     mutating func migrateSystemItemIDs() -> Bool {
         let before = realms
         for index in realms.indices {

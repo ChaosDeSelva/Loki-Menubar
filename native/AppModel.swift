@@ -156,6 +156,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.scanning = false
                 guard self.preferences.source == "menu" else { self.refresh(); return }
+                if self.preferences.migrateItemAliases(result.legacyAliases) { self.save() }
                 self.items = result.items
                 self.lastScan = Date()
                 self.scanSummary = "\(result.items.count) menu items · \(result.scanned) processes checked"

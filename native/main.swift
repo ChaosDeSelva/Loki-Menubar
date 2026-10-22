@@ -212,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         model.shortcutRegistered = result == noErr
     }
     func applicationWillTerminate(_ notification: Notification) {
-        model.visibility.stop()
+        model?.visibility.stop()
         removeDismissalMonitors()
         if let hotKey { UnregisterEventHotKey(hotKey) }
         if let eventHandler { RemoveEventHandler(eventHandler) }

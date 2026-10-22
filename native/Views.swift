@@ -129,7 +129,7 @@ struct ShelfView: View {
             }
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(model.accent)
-                TextField("Find a little mischief…", text: $model.query)
+                TextField(model.preferences.playful ? "Find a little mischief…" : "Search your shelf…", text: $model.query)
                     .textFieldStyle(.plain).font(.system(size: 14)).focused($searchFocused)
                     .onSubmit {
                         if let item = model.visibleItems.first(where: { $0.id == selectedID }) ?? model.visibleItems.first { model.open(item) }
@@ -179,20 +179,26 @@ struct ShelfView: View {
                     Text(emptyDetail).font(.system(size: 12)).foregroundStyle(LokiStyle.muted).multilineTextAlignment(.center).frame(maxWidth: 300)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 8) {
                         ForEach(model.visibleItems) { item in
                             ShelfRow(item: item, model: model, selected: selectedID == item.id)
+                                .id(item.id)
                                 .onDrag { draggedID = item.id; return NSItemProvider(object: item.id as NSString) }
                                 .onDrop(of: [.text], delegate: ShelfDrop(target: item.id, dragged: $draggedID, model: model))
                         }
                     }.padding(1)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(-1).scrollIndicators(.automatic)
+                .onChange(of: selectedID) { _, id in
+                    if let id { proxy.scrollTo(id) }
+                }
+                }
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Circle().fill(model.scanning ? Color.orange : model.accent).frame(width: 5, height: 5)
-                    Text(model.scanning ? "Gathering your tools…" : model.scanSummary).font(.system(size: 10)).lineLimit(1)
+                    Text(model.scanning ? (model.preferences.playful ? "Gathering your tools…" : "Refreshing…") : model.scanSummary).font(.system(size: 10)).lineLimit(1)
                     Spacer()
                     if compact {
                         Menu(model.realm.name) {
@@ -213,8 +219,8 @@ struct ShelfView: View {
         .onReceive(NotificationCenter.default.publisher(for: .lokiFocusSearch)) { _ in searchFocused = true }
     }
     private var emptyTitle: String {
-        if model.scanning { return "Looking around the realm…" }
-        if !model.query.isEmpty { return "No mischief by that name." }
+        if model.scanning { return model.preferences.playful ? "Looking around the realm…" : "Finding menu items…" }
+        if !model.query.isEmpty { return model.preferences.playful ? "No mischief by that name." : "No matching items." }
         return model.favoritesOnly ? "Your favorites start here." : "Nothing on the shelf yet."
     }
     private var emptyDetail: String {
@@ -384,7 +390,7 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 23) {
-                Text("Make a little mischief.").font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
+                Text(model.preferences.playful ? "Make a little mischief." : "Settings").font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
                 settingsGroup("PERSONALITY") {
                     HStack {
                         Text("A color for your realm").font(.system(size: 13))

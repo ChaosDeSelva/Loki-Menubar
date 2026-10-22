@@ -39,3 +39,18 @@ enum MenuLabel {
         return systemID(identifier: parts[2], title: label)
     }
 }
+
+/// Titles are presentation, never persistence keys. Unidentified extras use their
+/// owner's traversal slot; apps that reorder indistinguishable extras remain ambiguous.
+enum MenuIdentity {
+    static func nextOccurrence(identifier: String, title: String, counters: inout [String: Int]) -> Int {
+        let key = identifier.isEmpty ? "title:" + title : "identifier:" + identifier
+        let occurrence = counters[key, default: 0]
+        counters[key] = occurrence + 1
+        return occurrence
+    }
+
+    static func thirdParty(bundle: String, identifier: String, slot: Int) -> String {
+        identifier.isEmpty ? "menu-slot:\(bundle):\(slot)" : "menu:\(bundle):\(identifier)"
+    }
+}

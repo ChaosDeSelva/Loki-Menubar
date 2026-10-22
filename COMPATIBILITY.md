@@ -6,7 +6,7 @@ This is a preview release. “Implemented” describes code, not proof across al
 
 Checked on Apple Silicon / macOS 27.0.1:
 
-- Signed build compiles; 42 search, ordering, geometry, grouping, and persistence regression checks pass.
+- Signed build compiles; 50 search, ordering, geometry, grouping, and persistence regression checks pass.
 - The menu-extra scan yields one Clock and no Apple-menu entries in the observed setup (previous prototype incorrectly produced dozens of duplicates).
 - Escape closes the shelf, verified through the app’s independent `--status` response. The close control also removes Loki’s visible window.
 - Selecting Control Center opens a Control Center panel and leaves Loki’s shelf closed. A subsequent automation inspection timed out; this is not a claim of broad third-party menu compatibility.
@@ -39,7 +39,7 @@ No notched-MacBook, Intel, older-macOS, sleep/wake soak, or long-running multi-d
 | Area | Current approach and remaining work |
 | --- | --- |
 | Menu tracking | No remote AXPress or private menu-window mutation. Rehide waits on visible popup metadata. More third-party testing is required. |
-| Discovery | Extras-only traversal, system identity deduplication, and bounds validation. Dynamic labels need stronger identity handling. |
+| Discovery | Extras-only traversal, system identity deduplication, and bounds validation. Third-party titles no longer define identity; unnamed items use per-owner traversal slots. Reordering multiple unnamed extras remains ambiguous. |
 | Launch behavior | Accessory app, quiet launch, and an explicitly opened full window. |
 | Privacy | No screenshots or screen-recording permission; menu access uses Accessibility. |
 | Display changes | Bounded shelf and conservative reveal/stop on layout changes. Broader display coverage is pending. |
@@ -62,3 +62,7 @@ Custom group lifecycle, migration, invalid names, offline assignments, realm iso
 ## Alpha 3 validation
 
 The layout was rendered from SwiftUI and inspected for form alignment, compact header/footer, and toolbar spacing. The Superpowers independent review led to canonical system-item IDs with legacy preference migration, nested-popover Escape handling, and suppression of stale undo actions. macOS 27 hiding remains explicitly unavailable.
+
+## Alpha 4 validation
+
+The 50-check suite includes changing-label favorites and groups, distinct unnamed slots, and conservative legacy-ID migration. A real duplicate-launch check exited successfully while the existing process remained running. Shutdown tolerates an uninitialized model, keyboard selection scrolls into view, and the personality setting changes shelf copy. Legacy title-based preferences migrate when that title is observed again; already-changed titles cannot be safely matched automatically. Full interactive updater installation/relaunch and broad third-party menu qualification remain pending.

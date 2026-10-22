@@ -6,7 +6,7 @@ A little order. A little mischief. An original Swift/AppKit menu-bar utility for
 
 ## Release status
 
-**0.1.0-alpha.3 is an early preview.** Apple Silicon; macOS 14 or later. Release checks ran on macOS 27.0.1. Earlier macOS versions and notched MacBooks are not yet verified. See the explicit feature gaps below before installing.
+**0.1.0-alpha.4 is an early preview.** Apple Silicon; macOS 14 or later. Release checks ran on macOS 27.0.1. Earlier macOS versions and notched MacBooks are not yet verified. See the explicit feature gaps below before installing.
 
 ## What is included
 

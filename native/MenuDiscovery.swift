@@ -19,6 +19,7 @@ struct DiscoveryResult {
     var items: [ShelfItem]
     var scanned: Int
     var unresponsive: Int
+    var legacyAliases: [String: String] = [:]
 }
 
 enum MenuDiscovery {
@@ -64,6 +65,7 @@ enum MenuDiscovery {
         var scanned = 0
         var unresponsive = 0
         var seen = Set<String>()
+        var aliases: [String: String] = [:]
         let deadline = Date().addingTimeInterval(5)
         for app in apps {
             guard Date() < deadline else { break }
@@ -85,6 +87,7 @@ enum MenuDiscovery {
             var visited = Set<CFHashCode>()
             var occurrences: [String: Int] = [:]
             var count = 0
+            var unnamedSlot = 0
             while !queue.isEmpty && count < 250 && Date() < deadline {
                 let (element, depth) = queue.removeFirst()
                 guard visited.insert(CFHash(element)).inserted else { continue }
@@ -99,11 +102,17 @@ enum MenuDiscovery {
                           !identifier.contains(Bundle.main.bundleIdentifier ?? "io.github.ChaosDeSelva.Loki") else { continue }
                     let identity = identifier.isEmpty ? title : identifier
                     let base = "menu:\(bundle):\(identity)"
-                    let occurrence = occurrences[base, default: 0]
-                    occurrences[base] = occurrence + 1
+                    let occurrence = MenuIdentity.nextOccurrence(identifier: identifier, title: title, counters: &occurrences)
                     // System controls are mirrored across displays but represent
                     // one logical item. Never suffix those duplicate discoveries.
-                    let id = isSystem ? MenuLabel.systemID(identifier: identifier, title: title) : (occurrence == 0 ? base : "\(base):\(occurrence)")
+                    let stableBase = MenuIdentity.thirdParty(bundle: bundle, identifier: identifier, slot: unnamedSlot)
+                    let id = isSystem ? MenuLabel.systemID(identifier: identifier, title: title)
+                        : (identifier.isEmpty || occurrence == 0 ? stableBase : "\(stableBase):\(occurrence)")
+                    if !isSystem && identifier.isEmpty {
+                        unnamedSlot += 1
+                        let legacy = occurrence == 0 ? base : "\(base):\(occurrence)"
+                        aliases[legacy] = id
+                    }
                     if seen.insert(id).inserted {
                         items.append(ShelfItem(id: id, title: String(title.prefix(100)), appName: isSystem ? "Menu bar" : name,
                             bundleID: bundle, pid: app.processIdentifier, icon: isSystem ? nil : app.icon,
@@ -114,7 +123,7 @@ enum MenuDiscovery {
                 }
             }
         }
-        return DiscoveryResult(items: items, scanned: scanned, unresponsive: unresponsive)
+        return DiscoveryResult(items: items, scanned: scanned, unresponsive: unresponsive, legacyAliases: aliases.filter { !seen.contains($0.key) })
     }
 
     static func activate(_ item: ShelfItem) -> String? {
