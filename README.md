@@ -100,4 +100,4 @@ See [the roadmap](ROADMAP.md) for prioritized improvements and release-quality c
 
 Compact popup controls, consistent form heights, group deletion confirmation and session undo, improved system-menu labels, and signed in-app updates. Automatic update checks are opt-in in Settings.
 
-**macOS 27:** app-selection hiding replaces the old divider. This candidate has passed build and lifecycle checks, but visual hide/reveal and forced-process-death recovery are still release gates. The divider remains experimental on macOS 14–26.
+**macOS 27:** app-selection hiding replaces the old divider. Build and lifecycle checks pass, and a user-observed test confirmed hide/reveal while other icons remained visible. Forced-process-death recovery and broader display qualification remain unverified. The divider remains experimental on macOS 14–26.
