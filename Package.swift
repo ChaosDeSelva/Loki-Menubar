@@ -13,7 +13,8 @@ let package = Package(
         .executableTarget(name: "Loki", dependencies: ["LokiMenuBarBridge", .product(name: "Sparkle", package: "Sparkle")], path: "native", linkerSettings: [
             .linkedFramework("AppKit"), .linkedFramework("SwiftUI"),
             .linkedFramework("ApplicationServices"), .linkedFramework("Carbon"),
-            .linkedFramework("ServiceManagement")
+            .linkedFramework("ServiceManagement"),
+            .linkedFramework("CoreAudio"), .linkedFramework("CoreMediaIO")
         ])
     ]
 )

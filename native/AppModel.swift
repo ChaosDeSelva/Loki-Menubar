@@ -2,9 +2,12 @@ import AppKit
 import SwiftUI
 import ServiceManagement
 
+@MainActor
 final class AppModel: ObservableObject {
     @Published var preferences = Preferences()
     @Published var items: [ShelfItem] = []
+    /// Menu extras for the hidden-icons picker, scanned whatever the shelf's source is.
+    @Published var menuExtras: [ShelfItem] = []
     @Published var query = ""
     @Published var selectedGroup = "All"
     @Published var favoritesOnly = false
@@ -22,7 +25,9 @@ final class AppModel: ObservableObject {
         guard let deletedGroup, deletedGroup.realmID == realm.id else { return false }
         return !realm.availableGroups.contains { $0.compare(deletedGroup.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
     }
-    let updater = UpdateController()
+    /// Settings enforced by a configuration profile, read once at launch (docs/MDM.md).
+    let policy = ManagedPolicy.current
+    let updater: UpdateController
     var summon: (() -> Void)?
     var dismissShelf: (() -> Void)?
     private let store: PreferenceStore
@@ -34,6 +39,7 @@ final class AppModel: ObservableObject {
 
     init(store: PreferenceStore = PreferenceStore()) {
         self.store = store
+        updater = UpdateController(policy: policy)
         do {
             preferences = try store.load()
             if preferences.migrateSystemItemIDs() { try store.save(preferences) }
@@ -42,16 +48,20 @@ final class AppModel: ObservableObject {
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
                      NSWorkspace.didWakeNotification, NSWorkspace.activeSpaceDidChangeNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                self?.scheduleRefresh()
+                MainActor.assumeIsolated { self?.scheduleRefresh() }
             })
         }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.refresh()
+            MainActor.assumeIsolated { self?.refresh() }
         })
         refresh()
     }
 
-    var realm: Realm { preferences.realms.first(where: { $0.id == preferences.selectedRealm }) ?? Realm.defaults[0] }
+    var realm: Realm { policy.apply(to: preferences.realms.first(where: { $0.id == preferences.selectedRealm }) ?? Realm.defaults[0]) }
+    /// What Loki acts on: saved preferences with managed values laid over them.
+    var effectivePreferences: Preferences { policy.apply(to: preferences) }
+    /// The icons Loki keeps hidden right now. Empty when the organization turns hiding off.
+    var hiddenSet: Set<String> { policy.disableHiding ? [] : Set(realm.hiddenItems ?? []) }
     var visibleItems: [ShelfItem] {
         let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         return ShelfEngine.arrange(items.map(\.record), realm: realm, query: query, favoritesOnly: favoritesOnly).compactMap { byID[$0] }.filter { selectedGroup == "All" || (realm.groups?[$0.id] ?? "Ungrouped") == selectedGroup }
@@ -70,7 +80,11 @@ final class AppModel: ObservableObject {
         do { try store.save(preferences) }
         catch { notice = "Could not save your changes: \(error.localizedDescription)" }
     }
-    func selectRealm(_ id: String) { visibility.stop(); preferences.selectedRealm = id; selectedGroup = "All"; query = ""; save() }
+    func selectRealm(_ id: String) {
+        let before = hiddenSet
+        preferences.selectedRealm = id; selectedGroup = "All"; query = ""; save()
+        if hiddenSet != before { visibility.apply(hiddenSet) }
+    }
     @discardableResult
     func setGroupName(_ name: String, replacing old: String? = nil) -> Bool {
         guard canSave, let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return false }
@@ -114,27 +128,34 @@ final class AppModel: ObservableObject {
         groups[bundleID] = name == "Ungrouped" ? nil : name
         preferences.realms[index].groups = groups; save()
     }
-    func setTucked(_ bundle: String, hidden: Bool) {
-        guard bundle != Bundle.main.bundleIdentifier, !bundle.hasPrefix("com.apple."),
-              let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return }
-        visibility.stop()
-        var selected = Set(preferences.realms[index].tuckedApps ?? [])
-        if hidden { selected.insert(bundle) } else { selected.remove(bundle) }
-        preferences.realms[index].tuckedApps = selected.sorted()
+    func setHidden(_ id: String, hidden: Bool) {
+        guard policy.hiddenItems == nil, MenuBarSections.hideable(id, allowlist: visibility.usesAllowlist), let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return }
+        var selected = Set(preferences.realms[index].hiddenItems ?? [])
+        if hidden { selected.insert(id) } else { selected.remove(id) }
+        preferences.realms[index].hiddenItems = selected.sorted()
         save()
     }
-    var hidingApps: [(id: String, name: String)] {
-        var apps: [String: String] = [:]
-        for app in NSWorkspace.shared.runningApplications where !app.isTerminated {
-            guard let id = app.bundleIdentifier, id != Bundle.main.bundleIdentifier,
-                  !id.hasPrefix("com.apple."), app.activationPolicy != .prohibited else { continue }
-            apps[id] = app.localizedName ?? id
-        }
-        for id in realm.tuckedApps ?? [] where apps[id] == nil { apps[id] = id + " (not running)" }
-        return apps.map { (id: $0.key, name: $0.value) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    /// Saved choices that are not running still appear, so they can be unchosen.
+    var hidingCandidates: [(id: String, title: String, owner: String, running: Bool)] {
+        var rows = menuExtras.filter { MenuBarSections.hideable($0.id, allowlist: visibility.usesAllowlist) }.map { (id: $0.id, title: $0.title, owner: $0.appName, running: true) }
+        let present = Set(rows.map(\.id))
+        for id in realm.hiddenItems ?? [] where !present.contains(id) { rows.append((id: id, title: id, owner: "Not running", running: false)) }
+        return rows.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
-    func startVisibility() {
-        visibility.start(delay: preferences.rehideDelay ?? 3, autoRehide: preferences.autoRehide ?? true, hiddenBundles: Set(realm.tuckedApps ?? []))
+    func applyHiding() {
+        guard !policy.disableHiding else { notice = "Your organization has turned off icon hiding on this Mac."; return }
+        visibility.apply(hiddenSet)
+    }
+    func applyHidingSettings() {
+        let effective = effectivePreferences
+        visibility.settings(delay: effective.rehideDelay ?? 3, autoRehide: effective.autoRehide ?? true, hoverReveal: effective.hoverReveal ?? false)
+    }
+    func refreshExtras() {
+        guard MenuDiscovery.trusted else { menuExtras = []; return }
+        scanQueue.async { [weak self] in
+            let result = MenuDiscovery.scan()
+            DispatchQueue.main.async { self?.menuExtras = result.items }
+        }
     }
     func pin(_ id: String) {
         guard let index = preferences.realms.firstIndex(where: { $0.id == preferences.selectedRealm }) else { return }
@@ -177,6 +198,7 @@ final class AppModel: ObservableObject {
                 guard self.preferences.source == "menu" else { self.refresh(); return }
                 if self.preferences.migrateItemAliases(result.legacyAliases) { self.save() }
                 self.items = result.items
+                self.menuExtras = result.items
                 self.lastScan = Date()
                 self.scanSummary = "\(result.items.count) menu items · \(result.scanned) processes checked"
                 if result.unresponsive > 0 { self.scanSummary += " · \(result.unresponsive) busy" }
@@ -189,6 +211,7 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
     func open(_ item: ShelfItem) {
+        let wasConcealed = visibility.concealed
         visibility.reveal()
         dismissShelf?()
         if item.kind == .app {
@@ -199,12 +222,13 @@ final class AppModel: ObservableObject {
         }
         // Some owners keep AXPress pending for the lifetime of a tracking menu.
         // Never block Loki's main run loop or reopen its UI over that menu.
-        actionQueue.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+        actionQueue.asyncAfter(deadline: .now() + (wasConcealed ? 0.45 : 0.15)) { [weak self] in
             let error = MenuDiscovery.activate(item)
             DispatchQueue.main.async { if let error { self?.notice = error } }
         }
     }
     func setLaunchAtLogin(_ enabled: Bool) {
+        guard policy.launchAtLogin == nil else { return }
         do {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             launchAtLogin = SMAppService.mainApp.status == .enabled

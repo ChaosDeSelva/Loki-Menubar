@@ -409,25 +409,26 @@ struct SettingsView: View {
                 }
                 settingsGroup("AT YOUR SERVICE") {
                     Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.setLaunchAtLogin))
-                        .toggleStyle(.switch).tint(model.accent).font(.system(size: 13))
+                        .toggleStyle(.switch).tint(model.accent).font(.system(size: 13)).disabled(model.policy.launchAtLogin != nil)
+                    if model.policy.launchAtLogin != nil { ManagedCaption() }
                     HStack { Text("Summon shortcut"); Spacer(); Text("Control + Option + L").foregroundStyle(model.accent) }.font(.system(size: 12))
                     HStack { Text("Accessibility"); Spacer(); Text(model.accessibility ? "Allowed" : "Not allowed").foregroundStyle(model.accessibility ? model.accent : LokiStyle.muted) }.font(.system(size: 12))
                     if !model.accessibility {
                         Button("Allow menu access") { model.requestAccessibility() }.buttonStyle(AccentButton(color: model.accent))
                     }
                 }
-                UpdateSettingsView(updater: model.updater, accent: model.accent)
+                UpdateSettingsView(updater: model.updater, policy: model.policy, accent: model.accent)
                 settingsGroup("HONEST LITTLE UTILITY") {
                     Label("Local by design", systemImage: "lock.shield").font(.system(size: 13, weight: .medium)).foregroundStyle(model.accent)
                     Text("Loki stores your realms on this Mac. It has no analytics, cloud service, or screen capture. Menu discovery uses Accessibility only when you select Menu items.")
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    Text("Choose apps to hide in Menu bar on macOS 27; earlier versions use a divider. Hover near the menu bar to reveal. Display changes and quitting Loki restore icons.")
+                    Text("Choose icons to hide in Menu bar. Loki moves them behind a divider using public macOS interfaces. Quitting Loki shows every icon again.")
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                     Button("Open settings folder") { model.openSettingsFolder() }.buttonStyle(.plain).foregroundStyle(model.accent).font(.system(size: 12))
                 }
                 if let notice = model.notice { Text(notice).font(.system(size: 12)).foregroundStyle(model.accent) }
                 HStack {
-                    Text("LOKI 0.1.0 · NATIVE SWIFT").font(.system(size: 9, weight: .semibold)).tracking(1.5).foregroundStyle(LokiStyle.muted)
+                    Text("LOKI \(lokiVersion.uppercased()) · NATIVE SWIFT").font(.system(size: 9, weight: .semibold)).tracking(1.5).foregroundStyle(LokiStyle.muted)
                     Spacer()
                     Button("Quit Loki") { NSApp.terminate(nil) }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(LokiStyle.muted)
                 }
@@ -454,78 +455,336 @@ extension Notification.Name { static let lokiFocusSearch = Notification.Name("Lo
 struct MenuBarView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var visibility: VisibilityController
-    @State private var confirmStop = false
+    @State private var filter = ""
+
+    private typealias Candidate = (id: String, title: String, owner: String, running: Bool)
+
+    /// One allowlist toggle: macOS 27 hides every icon an app shows, so the app is the unit.
+    private struct AppRow: Identifiable {
+        let id: String
+        let name: String
+        let itemIDs: [String]
+        let titles: [String]
+        let running: Bool
+    }
+
+    private static let menuBarSettingsURL = URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension")!
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("Room for a little mischief.").font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
-                Text(visibility.modern ? "Keep everyday icons in sight. Choose the apps to tuck away." : "Keep everyday icons in sight. Tuck the rest behind a divider.")
-                    .foregroundStyle(LokiStyle.muted)
-                VStack(alignment: .leading, spacing: 16) {
-                    Label("Set up your menu bar", systemImage: "menubar.rectangle").font(.headline)
-                    if visibility.modern && visibility.supported {
-                        Text("Choose apps below, then click Tuck icons. Close this window and move away from the menu bar. Hover near the menu bar to reveal them.")
-                            .font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-                        Text("All icons from each selected app hide together, on every display. Apple system controls and Loki stay available. Apps without menu icons are unaffected.")
-                            .font(.caption).foregroundStyle(LokiStyle.muted)
-                        ForEach(model.hidingApps, id: \.id) { app in
-                            Toggle(app.name, isOn: Binding(get: { model.realm.tuckedApps?.contains(app.id) ?? false }, set: { model.setTucked(app.id, hidden: $0) }))
-                                .toggleStyle(.switch).tint(model.accent).font(.system(size: 13))
-                        }
-                    } else if visibility.supported {
-                    Text("1. Show the divider.\n2. Hold Command and drag the filter-shaped divider to the left of Loki’s icon.\n3. Command-drag the icons you want to hide to the left of the divider.\n4. Choose Tuck icons, close this window, and move the pointer away from the menu bar.")
-                        .font(.system(size: 13)).lineSpacing(7).fixedSize(horizontal: false, vertical: true)
-                    } else {
-                        Text("This macOS build does not expose the expected hiding controls. All icons remain visible; your shelf and groups still work.")
-                            .font(.system(size: 13)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    }
-                    HStack {
-                        if !visibility.supported {
-                            Button("Open macOS Menu Bar settings") {
-                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension")!)
-                            }.buttonStyle(AccentButton(color: model.accent))
-                        } else if visibility.modern {
-                            Button("Tuck icons") {
-                                model.startVisibility()
-                                visibility.tuck()
-                                (NSApp.delegate as? AppDelegate)?.hideWindows()
-                            }.buttonStyle(AccentButton(color: model.accent)).disabled((model.realm.tuckedApps ?? []).isEmpty || visibility.applying)
-                            if visibility.managing {
-                                Button("Stop hiding") { confirmStop = true }.buttonStyle(DestructiveButton())
-                            }
-                        } else if visibility.managing {
-                            Button("Tuck icons") { visibility.tuck(); (NSApp.delegate as? AppDelegate)?.hideWindows() }
-                                .buttonStyle(AccentButton(color: model.accent))
-                            Button("Stop hiding & remove divider") { confirmStop = true }.buttonStyle(DestructiveButton())
-                        } else {
-                            Button("Show divider") { model.startVisibility() }.buttonStyle(AccentButton(color: model.accent))
-                        }
-                    }
-                    Text(visibility.applying ? "Waiting for macOS…" : visibility.concealed ? (visibility.modern ? "Selected apps tucked away" : "Hiding requested") : visibility.managing ? "Ready · icons revealed" : "All icons visible")
-                        .font(.caption).foregroundStyle(model.accent)
-                    if let failure = visibility.failure { Text(failure).font(.caption).foregroundStyle(.orange) }
-                }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
-                if visibility.supported {
-                VStack(alignment: .leading, spacing: 16) {
-                    Toggle("Rehide after hovering away", isOn: Binding(get: { model.preferences.autoRehide ?? true }, set: { model.preferences.autoRehide = $0; model.save(); visibility.stop() }))
-                        .toggleStyle(.switch).tint(model.accent)
-                    HStack {
-                        Text("Delay")
-                        Slider(value: Binding(get: { model.preferences.rehideDelay ?? 3 }, set: { model.preferences.rehideDelay = $0; model.save(); visibility.stop() }), in: 1...15, step: 1)
-                        Text("\(Int(model.preferences.rehideDelay ?? 3))s").monospacedDigit().frame(width: 30)
-                    }
-                    Text("Hover near the menu bar to reveal. Loki stays revealed while its window is active. Quitting or changing displays stops hiding; changing Spaces reveals icons. Setup is never enabled automatically at launch.")
-                        .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
-                }.padding(20).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("MENU BAR").font(.system(size: 9, weight: .bold)).tracking(2).foregroundStyle(model.accent)
+                    Text("Room for a little mischief.").font(.system(size: 30, weight: .semibold, design: .rounded)).tracking(-0.8)
+                    Text(intro).font(.system(size: 13)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Compatibility preview: macOS 27 hiding uses an undocumented system interface that may change with an OS update. Hiding is per app and applies to every display. Older macOS versions use a divider. Loki does not capture your screen.")
-                    .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+                if visibility.backend == .unavailable {
+                    unavailableCard
+                } else {
+                    hiddenIconsCard
+                    gettingThereCard
+                }
+                Text(footer).font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
             }.padding(30)
         }
-        .alert(visibility.modern ? "Stop hiding?" : "Stop hiding and remove the divider?", isPresented: $confirmStop) {
-            Button("Cancel", role: .cancel) { }
-            Button("Stop hiding", role: .destructive) { visibility.stop() }
-        } message: { Text("All icons will be revealed. Your saved choices will remain available.") }
+        .scrollIndicators(.hidden)
+        .onAppear { model.refreshExtras() }
+    }
+
+    // MARK: Cards
+
+    private var hiddenIconsCard: some View {
+        card {
+            HStack(alignment: .center) {
+                Label("Hidden icons", systemImage: "eye.slash").font(.headline)
+                Spacer()
+                statusPill
+            }
+            backendNote
+            if !model.accessibility {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Loki needs Accessibility to list your menu-bar icons\(visibility.usesAllowlist ? "" : " and move them").")
+                        .font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                    Button("Allow Accessibility") { model.requestAccessibility() }.buttonStyle(AccentButton(color: model.accent))
+                }
+            } else {
+                TextField(visibility.usesAllowlist ? "Filter apps" : "Filter icons", text: $filter)
+                    .textFieldStyle(LokiTextFieldStyle()).accessibilityLabel(visibility.usesAllowlist ? "Filter apps" : "Filter icons")
+                checklist
+                if listLocked { ManagedCaption(model.policy.disableHiding ? "Icon hiding is turned off by your organization" : nil) }
+                HStack(spacing: 14) {
+                    Button(visibility.arranging ? "Moving icons…" : "Apply") { model.applyHiding() }
+                        .buttonStyle(AccentButton(color: model.accent))
+                        .disabled(visibility.arranging || model.policy.disableHiding)
+                        .help(visibility.usesAllowlist ? "Hide the chosen apps’ icons" : "Move the chosen icons behind Loki’s divider")
+                    textButton("Refresh list", symbol: "arrow.clockwise", enabled: !visibility.arranging) { model.refreshExtras() }
+                    Spacer()
+                    textButton("Reveal all", symbol: "eye", enabled: visibility.mode != .idle && !visibility.arranging) { visibility.revealAll() }
+                        .help("Show every icon and stop hiding until you choose Apply")
+                }
+            }
+            if let summary = visibility.summary {
+                Label(summary, systemImage: "checkmark.circle").font(.caption).foregroundStyle(LokiStyle.muted)
+            }
+            if let failure = visibility.failure {
+                Label(failure, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var unavailableCard: some View {
+        card {
+            HStack(alignment: .center) {
+                Label("Hidden icons", systemImage: "eye.slash").font(.headline)
+                Spacer()
+                pill("Not available", color: LokiStyle.muted, busy: false)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Hiding status: not available on this macOS build")
+            }
+            Text("Icons can’t be hidden on this macOS build. macOS keeps every menu-bar icon on screen and does not give Loki a way to tuck any of them away, so every icon stays visible.")
+                .font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+            Text("You can still choose which of Apple’s controls appear in the menu bar from macOS settings. Loki’s shelf keeps working for every icon.")
+                .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+            Button("Open macOS Menu Bar settings") { NSWorkspace.shared.open(Self.menuBarSettingsURL) }
+                .buttonStyle(AccentButton(color: model.accent))
+            if let failure = visibility.failure {
+                Label(failure, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var gettingThereCard: some View {
+        card {
+            Label("Getting to hidden icons", systemImage: "hand.point.up.left").font(.headline)
+            Text(gettingThere).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+            Toggle("Show hidden icons when the pointer touches the menu bar", isOn: setting(\.hoverReveal, default: false))
+                .toggleStyle(.switch).tint(model.accent).font(.system(size: 13))
+                .disabled(model.policy.hoverReveal != nil)
+                .accessibilityLabel("Show hidden icons when the pointer touches the menu bar")
+            if model.policy.hoverReveal != nil { ManagedCaption() }
+            Toggle("Hide them again after the pointer leaves", isOn: setting(\.autoRehide, default: true))
+                .toggleStyle(.switch).tint(model.accent).font(.system(size: 13))
+                .disabled(model.policy.autoRehide != nil)
+                .accessibilityLabel("Hide icons again after the pointer leaves the menu bar")
+            if model.policy.autoRehide != nil { ManagedCaption() }
+            HStack(spacing: 12) {
+                Text("Delay").font(.system(size: 13))
+                Slider(value: Binding(get: { delay }, set: { model.preferences.rehideDelay = $0; model.save(); model.applyHidingSettings() }),
+                       in: delayRange, step: 1)
+                    .tint(model.accent)
+                    .disabled(model.policy.rehideDelay != nil || !autoRehideOn)
+                    .accessibilityLabel("Delay before hiding again")
+                    .accessibilityValue("\(Int(delay)) seconds")
+                Text("\(Int(delay))s").font(.system(size: 12)).monospacedDigit().foregroundStyle(model.accent).frame(width: 30, alignment: .trailing)
+                    .accessibilityHidden(true)
+            }.opacity(autoRehideOn ? 1 : 0.5)
+            if model.policy.rehideDelay != nil { ManagedCaption() }
+        }
+    }
+
+    // MARK: Checklist
+
+    @ViewBuilder private var checklist: some View {
+        let empty = visibility.usesAllowlist ? appRows.isEmpty : iconRows.isEmpty
+        if empty {
+            Text(emptyText).font(.caption).foregroundStyle(LokiStyle.muted).padding(.vertical, 4)
+        } else {
+            VStack(spacing: 0) {
+                if visibility.usesAllowlist {
+                    ForEach(Array(appRows.enumerated()), id: \.element.id) { index, app in
+                        if index > 0 { rowDivider }
+                        appToggle(app)
+                    }
+                } else {
+                    ForEach(Array(iconRows.enumerated()), id: \.element.id) { index, row in
+                        if index > 0 { rowDivider }
+                        iconToggle(row)
+                    }
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 4)
+            .background(LokiStyle.background.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.06)))
+            .disabled(visibility.arranging || listLocked)
+        }
+    }
+
+    private func iconToggle(_ row: Candidate) -> some View {
+        let isOn = Binding(get: { isHidden(row.id) }, set: { model.setHidden(row.id, hidden: $0) })
+        return Toggle(isOn: isOn) {
+            rowLabel(title: row.title, caption: row.owner, running: row.running)
+        }
+        .toggleStyle(.switch).tint(model.accent).padding(.vertical, 9)
+        .accessibilityLabel("Hide \(row.title)")
+        .accessibilityHint(row.running ? "From \(row.owner)" : "Not running")
+    }
+
+    private func appToggle(_ app: AppRow) -> some View {
+        let isOn = Binding(get: { app.itemIDs.contains(where: isHidden) },
+                           set: { hide in for id in app.itemIDs { model.setHidden(id, hidden: hide) } })
+        let caption = app.titles.isEmpty ? "Not running" : app.titles.joined(separator: " · ")
+        return Toggle(isOn: isOn) {
+            rowLabel(title: app.name, caption: caption, running: app.running)
+        }
+        .toggleStyle(.switch).tint(model.accent).padding(.vertical, 9)
+        .accessibilityLabel("Hide every \(app.name) icon")
+        .accessibilityHint(app.titles.isEmpty ? "Not running" : "Icons: \(app.titles.joined(separator: ", "))")
+    }
+
+    private func rowLabel(title: String, caption: String, running: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(running ? LokiStyle.text : LokiStyle.muted)
+            Text(caption).font(.caption).foregroundStyle(LokiStyle.muted).lineLimit(2)
+        }
+    }
+
+    private var rowDivider: some View { Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1) }
+
+    private var words: [Substring] { filter.lowercased().split(separator: " ") }
+
+    private var iconRows: [Candidate] {
+        model.hidingCandidates.filter { row in words.allSatisfy { "\(row.title) \(row.owner)".lowercased().contains($0) } }
+    }
+
+    /// Groups every candidate by owning app, so a toggle covers all of an app's icons even
+    /// when the filter matches only one. Items the allowlist cannot hide are left out.
+    private var appRows: [AppRow] {
+        let candidates = model.hidingCandidates.filter { MenuBarSections.hideable($0.id, allowlist: true) }
+        let grouped = Dictionary(grouping: candidates) { MenuBarSections.owner(ofItem: $0.id) ?? $0.id }
+        let apps = grouped.map { bundle, rows -> AppRow in
+            let running = rows.filter(\.running)
+            let titles = running.map(\.title).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+            return AppRow(id: bundle, name: running.first?.owner ?? bundle, itemIDs: rows.map(\.id), titles: titles, running: !running.isEmpty)
+        }
+        return apps
+            .filter { app in words.allSatisfy { "\(app.name) \(app.id) \(app.titles.joined(separator: " "))".lowercased().contains($0) } }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private func isHidden(_ id: String) -> Bool { model.realm.hiddenItems?.contains(id) ?? false }
+
+    private var emptyText: String {
+        if !filter.isEmpty { return visibility.usesAllowlist ? "No apps match." : "No icons match." }
+        if model.menuExtras.isEmpty { return "Looking for menu-bar icons…" }
+        return visibility.usesAllowlist ? "No third-party app icons to hide right now." : "No icons Loki can move right now."
+    }
+
+    // MARK: Status
+
+    private var statusText: String {
+        switch visibility.mode {
+        case .arranging: return "Moving icons…"
+        case .revealed: return "Showing hidden icons"
+        case .idle: return "Nothing hidden"
+        case .collapsed:
+            if visibility.usesAllowlist {
+                let apps = Set(visibility.hidden.compactMap(MenuBarSections.owner(ofItem:))).count
+                return "\(apps) app\(apps == 1 ? "" : "s") hidden"
+            }
+            return "\(visibility.hidden.count) hidden"
+        }
+    }
+
+    private var statusSpoken: String {
+        switch visibility.mode {
+        case .arranging: return "Hiding status: moving icons, please wait"
+        case .revealed: return "Hiding status: hidden icons are showing"
+        case .idle: return "Hiding status: nothing hidden"
+        case .collapsed:
+            if visibility.usesAllowlist { return "Hiding status: \(statusText)" }
+            let count = visibility.hidden.count
+            return "Hiding status: \(count) icon\(count == 1 ? "" : "s") hidden"
+        }
+    }
+
+    private var statusPill: some View {
+        let color: Color = visibility.mode == .idle ? LokiStyle.muted : (visibility.arranging ? .orange : model.accent)
+        return pill(statusText, color: color, busy: visibility.arranging)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(statusSpoken)
+            .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private func pill(_ text: String, color: Color, busy: Bool) -> some View {
+        HStack(spacing: 6) {
+            if busy { ProgressView().controlSize(.mini).frame(width: 10, height: 10) }
+            else { Circle().fill(color).frame(width: 6, height: 6) }
+            Text(text).font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(color.opacity(0.12), in: Capsule())
+        .overlay(Capsule().stroke(color.opacity(0.25)))
+    }
+
+    // MARK: Copy
+
+    private var intro: String {
+        switch visibility.backend {
+        case .divider: return "Check the icons you want out of sight. Loki tucks them behind a divider and keeps them one click away."
+        case .allowlist: return "Choose the apps whose icons you want out of sight. Loki keeps them one click away."
+        case .unavailable: return "Loki can’t hide menu-bar icons on this version of macOS."
+        }
+    }
+
+    @ViewBuilder private var backendNote: some View {
+        switch visibility.backend {
+        case .divider:
+            Text("Loki Command-drags each chosen icon behind a hidden divider; your pointer moves for a moment. Clock and Control Center stay put; macOS pins them.")
+                .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+        case .allowlist:
+            VStack(alignment: .leading, spacing: 8) {
+                Text("On macOS 27, hiding works per app: checking an app hides every icon it shows. Apple’s system controls aren’t listed because macOS 27 can’t hide them individually.")
+                    .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+                Label("This uses an undocumented macOS interface. If a macOS update removes it, Loki switches hiding off and every icon stays visible.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+            }
+        case .unavailable:
+            EmptyView()
+        }
+    }
+
+    private var gettingThere: String {
+        if visibility.usesAllowlist {
+            return "Option-click Loki’s rune, or right-click it and choose Show Hidden Icons. Option-click again to hide them."
+        }
+        return "Option-click Loki’s rune, or right-click it and choose Show Hidden Icons. Click the ‹ chevron to hide them again. Every hidden icon is also on Loki’s shelf."
+    }
+
+    private var footer: String {
+        switch visibility.backend {
+        case .divider: return "Loki uses only public macOS interfaces here: a status item for the divider and Accessibility to move icons. Quitting Loki shows every icon again. Loki never captures your screen."
+        case .allowlist: return "Hiding lasts only while Loki runs: quitting Loki, or a crash, shows every icon again. Loki never captures your screen."
+        case .unavailable: return "Loki never captures your screen, and it leaves your menu bar exactly as macOS arranges it."
+        }
+    }
+
+    // MARK: Helpers
+
+    private var listLocked: Bool { model.policy.hiddenItems != nil || model.policy.disableHiding }
+    private var autoRehideOn: Bool { model.effectivePreferences.autoRehide ?? true }
+    private var delay: Double { model.effectivePreferences.rehideDelay ?? 3 }
+    /// Managed delays may reach 30 seconds; widen the slider only when one does.
+    private var delayRange: ClosedRange<Double> { delay > 15 ? 1...30 : 1...15 }
+
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) { content() }
+            .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+            .background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.04)))
+    }
+
+    private func textButton(_ title: String, symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Label(title, systemImage: symbol).font(.system(size: 12)) }
+            .buttonStyle(.plain).foregroundStyle(model.accent).disabled(!enabled).opacity(enabled ? 1 : 0.4)
+    }
+
+    private func setting(_ key: WritableKeyPath<Preferences, Bool?>, default value: Bool) -> Binding<Bool> {
+        Binding(get: { model.effectivePreferences[keyPath: key] ?? value },
+                set: { model.preferences[keyPath: key] = $0; model.save(); model.applyHidingSettings() })
     }
 }
 
@@ -656,16 +915,34 @@ struct GroupSelector: View {
 
 struct UpdateSettingsView: View {
     @ObservedObject var updater: UpdateController
+    let policy: ManagedPolicy
     let accent: Color
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("UPDATES").font(.system(size: 9, weight: .bold)).tracking(2).foregroundStyle(LokiStyle.muted)
-            Toggle("Check for updates automatically", isOn: Binding(get: { updater.automaticChecks }, set: updater.setAutomaticChecks))
-                .toggleStyle(.switch).tint(accent)
-            Text("Updates are downloaded and verified before installation. Loki will ask before installing and relaunching. Checks contact the public update feed on GitHub; no shelf or group data is sent.")
-                .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
-            Button("Check for updates…") { updater.checkForUpdates() }
-                .buttonStyle(AccentButton(color: accent)).disabled(!updater.canCheck)
+            if policy.disableUpdates {
+                ManagedCaption("Updates are managed by your organization")
+            } else {
+                controls
+            }
         }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+    }
+    @ViewBuilder private var controls: some View {
+        Toggle("Check for updates automatically", isOn: Binding(get: { updater.automaticChecks }, set: updater.setAutomaticChecks))
+            .toggleStyle(.switch).tint(accent).disabled(policy.automaticUpdateChecks != nil)
+        if policy.automaticUpdateChecks != nil { ManagedCaption() }
+        Text("Updates are downloaded and verified before installation. Loki will ask before installing and relaunching. Checks contact the public update feed on GitHub; no shelf or group data is sent.")
+            .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+        Button("Check for updates…") { updater.checkForUpdates() }
+            .buttonStyle(AccentButton(color: accent)).disabled(!updater.canCheck)
+    }
+}
+
+/// Marks a control an organization's configuration profile has locked.
+struct ManagedCaption: View {
+    var text = "Managed by your organization"
+    init(_ text: String? = nil) { if let text { self.text = text } }
+    var body: some View {
+        Label(text, systemImage: "building.2").font(.caption).foregroundStyle(LokiStyle.muted)
     }
 }

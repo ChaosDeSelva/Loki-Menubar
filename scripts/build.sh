@@ -3,6 +3,14 @@ set -euo pipefail
 LOKI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOKI_BUILD="${LOKI_BUILD_DIR:-$LOKI_ROOT/build}"
 LOKI_APP="$LOKI_BUILD/Loki.app"
+# Single version source. package.sh and notarize.sh read these back from the
+# built Info.plist. Increment LOKI_BUILD_NUMBER for every published build.
+LOKI_MARKETING_VERSION="${LOKI_MARKETING_VERSION:-0.1.0}"
+LOKI_BUILD_NUMBER="${LOKI_BUILD_NUMBER:-8}"
+LOKI_RELEASE_LABEL="${LOKI_RELEASE_LABEL:-0.1.0-alpha.6}"
+[[ "$LOKI_MARKETING_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "Invalid LOKI_MARKETING_VERSION: $LOKI_MARKETING_VERSION" >&2; exit 1; }
+[[ "$LOKI_BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "Invalid LOKI_BUILD_NUMBER: $LOKI_BUILD_NUMBER" >&2; exit 1; }
+[[ "$LOKI_RELEASE_LABEL" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid LOKI_RELEASE_LABEL: $LOKI_RELEASE_LABEL" >&2; exit 1; }
 bash "$LOKI_ROOT/scripts/prepare-sparkle.sh"
 LOKI_SIGN_OPTIONS=(--force --sign "${LOKI_SIGN_IDENTITY:--}")
 if [[ "${LOKI_SIGN_IDENTITY:--}" != "-" ]]; then
@@ -14,8 +22,9 @@ swiftc -import-objc-header "$LOKI_ROOT/nativeBridge/include/LOKMenuBarBridge.h" 
   -module-cache-path "$LOKI_BUILD/module-cache" \
   -F "$LOKI_ROOT/build/vendor/Sparkle" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -framework AppKit -framework SwiftUI -framework ApplicationServices -framework Carbon -framework ServiceManagement \
+  -framework CoreAudio -framework CoreMediaIO \
   "$LOKI_ROOT"/native/*.swift -o "$LOKI_APP/Contents/MacOS/Loki"
-cat > "$LOKI_APP/Contents/Info.plist" <<'PLIST'
+cat > "$LOKI_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -24,8 +33,9 @@ cat > "$LOKI_APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Loki</string>
 <key>CFBundleDisplayName</key><string>Loki</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>CFBundleVersion</key><string>7</string>
+<key>CFBundleShortVersionString</key><string>$LOKI_MARKETING_VERSION</string>
+<key>CFBundleVersion</key><string>$LOKI_BUILD_NUMBER</string>
+<key>LokiReleaseLabel</key><string>$LOKI_RELEASE_LABEL</string>
 <key>SUFeedURL</key><string>https://chaosdeselva.github.io/Loki-Menubar/appcast.xml</string>
 <key>SUPublicEDKey</key><string>lQmA4X8FRIxdccivd/2WVfXK6Pk9X9PIzoiV4H5MWso=</string>
 <key>SUEnableAutomaticChecks</key><false/>
@@ -49,10 +59,16 @@ swiftc -module-cache-path "$LOKI_BUILD/module-cache" "$LOKI_ROOT/native/BrandMar
 "$LOKI_BUILD/draw-icon" "$LOKI_BUILD/Loki.iconset"
 iconutil -c icns "$LOKI_BUILD/Loki.iconset" -o "$LOKI_APP/Contents/Resources/Loki.icns"
 ditto "$LOKI_ROOT/build/vendor/Sparkle/Sparkle.framework" "$LOKI_APP/Contents/Frameworks/Sparkle.framework"
-# Sign nested executable bundles before the framework and host app.
+# Sign nested executable bundles before the framework and host app, one at a
+# time (never --deep). Sparkle 2.6+ ships Downloader.xpc with entitlements that
+# must survive re-signing, per sparkle-project.org/documentation/sandboxing.
 LOKI_FRAMEWORK="$LOKI_APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 for LOKI_NESTED in "$LOKI_FRAMEWORK"/XPCServices/*.xpc "$LOKI_FRAMEWORK"/Updater.app "$LOKI_FRAMEWORK"/Autoupdate; do
-  codesign "${LOKI_SIGN_OPTIONS[@]}" "$LOKI_NESTED"
+  if [[ "$LOKI_NESTED" == */Downloader.xpc ]]; then
+    codesign "${LOKI_SIGN_OPTIONS[@]}" --preserve-metadata=entitlements "$LOKI_NESTED"
+  else
+    codesign "${LOKI_SIGN_OPTIONS[@]}" "$LOKI_NESTED"
+  fi
 done
 codesign "${LOKI_SIGN_OPTIONS[@]}" "$LOKI_APP/Contents/Frameworks/Sparkle.framework"
 cp "$LOKI_ROOT/LICENSE" "$LOKI_APP/Contents/Resources/LICENSE.txt"

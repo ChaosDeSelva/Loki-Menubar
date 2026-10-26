@@ -12,7 +12,9 @@ struct Realm: Codable, Identifiable, Equatable {
     var symbol: String
     var pins: [String]
     var order: [String]
-    var tuckedApps: [String]? = nil
+    /// Menu-extra IDs kept in the hidden section, on both backends. Replaces alpha 5's per-app
+    /// `tuckedApps` list, which is ignored when decoding, so those choices are made again once.
+    var hiddenItems: [String]? = nil
     var groups: [String: String]? = nil
     var groupNames: [String]? = nil
 
@@ -69,6 +71,7 @@ struct Preferences: Codable {
     var source = "menu"
     var rehideDelay: Double? = nil
     var autoRehide: Bool? = nil
+    var hoverReveal: Bool? = nil
 
     /// Only migrate an observed legacy title; never guess which changed title
     /// belonged to a saved item. Existing canonical assignments win conflicts.
@@ -174,12 +177,5 @@ final class PreferenceStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(state).write(to: url, options: .atomic)
-    }
-}
-
-/// Public UI choices remain bundle IDs. Unknown and newly launched apps are visible.
-enum VisibilityPlan {
-    static func allowed(running: [String], hidden: Set<String>, ownBundle: String) -> [String] {
-        Set(running + [ownBundle]).filter { !hidden.contains($0) || $0 == ownBundle || $0.hasPrefix("com.apple.") }.sorted()
     }
 }

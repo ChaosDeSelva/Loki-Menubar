@@ -114,13 +114,162 @@ enum Tests {
         _ = MenuIdentity.nextOccurrence(identifier: "", title: "upload", counters: &counters)
         check("Unnamed labels cannot renumber identified extras", MenuIdentity.nextOccurrence(identifier: "upload", title: "Rate", counters: &counters) == 0)
         check("Duplicate identified extras remain distinct", MenuIdentity.nextOccurrence(identifier: "upload", title: "Other", counters: &counters) == 1)
-        let allowed = VisibilityPlan.allowed(running: ["one", "two", "one", "com.apple.controlcenter"], hidden: ["one", "self", "com.apple.controlcenter"], ownBundle: "self")
-        check("Hiding preserves owner and system controls", allowed == ["com.apple.controlcenter", "self", "two"])
-        check("New apps remain visible by default", VisibilityPlan.allowed(running: ["new"], hidden: ["old"], ownBundle: "self") == ["new", "self"])
-        var tucked = Preferences()
-        tucked.realms[0].tuckedApps = ["one"]
-        let tuckedReloaded = try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(tucked))
-        check("Hiding selection persists independently per realm", tuckedReloaded.realms[0].tuckedApps == ["one"] && tuckedReloaded.realms[1].tuckedApps == nil)
+        typealias S = MenuBarSections
+        check("Idle divider takes no space", S.dividerLength(.idle) == 0)
+        check("Collapsed divider pushes icons off-screen", S.dividerLength(.collapsed) >= 5_000)
+        check("Revealed and arranging dividers are a drop target", S.dividerLength(.revealed) > 0 && S.dividerLength(.arranging) == S.dividerLength(.revealed))
+        let rune = CGRect(x: 1300, y: 0, width: 30, height: 24)
+        check("Divider left of rune is valid", S.orderingValid(divider: CGRect(x: 1280, y: 0, width: 16, height: 24), anchor: rune))
+        check("Divider right of rune is refused", !S.orderingValid(divider: CGRect(x: 1340, y: 0, width: 16, height: 24), anchor: rune))
+        check("Zero-width divider is refused", !S.orderingValid(divider: CGRect(x: 1280, y: 0, width: 0, height: 24), anchor: rune))
+        let placements = [S.Placement(id: "left-chosen", midX: 900), S.Placement(id: "left-unchosen", midX: 950),
+                          S.Placement(id: "right-chosen", midX: 1100), S.Placement(id: "right-unchosen", midX: 1150)]
+        check("Only misplaced icons move", S.moves(items: placements, dividerMidX: 1000, hidden: ["left-chosen", "right-chosen"])
+              == [S.Move(id: "left-unchosen", toHidden: false), S.Move(id: "right-chosen", toHidden: true)])
+        check("Empty choice reveals everything", S.moves(items: placements, dividerMidX: 1000, hidden: []).allSatisfy { !$0.toHidden })
+        check("Settled layout needs no moves", S.moves(items: [S.Placement(id: "a", midX: 900)], dividerMidX: 1000, hidden: ["a"]).isEmpty)
+        let line = CGRect(x: 1000, y: 0, width: 16, height: 24)
+        check("Hidden drop lands on divider's left edge", S.dropPoint(divider: line, toHidden: true).x < line.midX && S.dropPoint(divider: line, toHidden: true).x >= line.minX)
+        check("Visible drop lands on divider's right edge", S.dropPoint(divider: line, toHidden: false).x > line.midX && S.dropPoint(divider: line, toHidden: false).x <= line.maxX)
+        check("Pinned system icons are not offered", !S.movable("menu:system:clock") && !S.movable("menu:system:controlcenter") && S.movable("menu:system:wifi"))
+        check("Rehide waits for idle delay", !S.shouldRehide(pointerInBar: false, menuOpen: false, mouseDown: false, commandHeld: false, idle: 2, delay: 3))
+        check("Rehide after idle delay", S.shouldRehide(pointerInBar: false, menuOpen: false, mouseDown: false, commandHeld: false, idle: 3, delay: 3))
+        for (name, inBar, menu, down, command) in [("pointer in bar", true, false, false, false), ("open menu", false, true, false, false),
+                                                   ("mouse down", false, false, true, false), ("Command held", false, false, false, true)] {
+            check("Rehide blocked by \(name)", !S.shouldRehide(pointerInBar: inBar, menuOpen: menu, mouseDown: down, commandHeld: command, idle: 60, delay: 3))
+        }
+        check("AppKit frames flip to top-left origin", S.flipped(CGRect(x: 10, y: 876, width: 16, height: 24), primaryHeight: 900) == CGRect(x: 10, y: 0, width: 16, height: 24))
+        var chosen = Preferences()
+        chosen.realms[0].hiddenItems = ["menu:system:wifi"]
+        let chosenReloaded = try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(chosen))
+        check("Hidden icons persist independently per realm", chosenReloaded.realms[0].hiddenItems == ["menu:system:wifi"] && chosenReloaded.realms[1].hiddenItems == nil)
+        var alpha5 = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Preferences())) as! [String: Any]
+        alpha5["realms"] = (alpha5["realms"] as! [[String: Any]]).map { var r = $0; r["tuckedApps"] = ["com.example.app"]; return r }
+        let upgraded = try JSONDecoder().decode(Preferences.self, from: JSONSerialization.data(withJSONObject: alpha5))
+        check("Alpha 5 app allowlist is read and ignored", upgraded.realms.allSatisfy { $0.hiddenItems == nil })
+        let unmanaged = ManagedPolicy([:])
+        check("No profile means nothing managed", !unmanaged.isManaged && unmanaged.apply(to: chosen).realms == chosen.realms)
+        let managed = ManagedPolicy(["HiddenItems": ["menu:system:wifi", " menu:system:wifi ", "", "menu:system:battery"], "AutoRehide": false,
+                                     "RehideDelay": 90, "HoverReveal": true, "DisableUpdates": true, "AutomaticUpdateChecks": false,
+                                     "DisableHiding": false, "LaunchAtLogin": true, "Unrelated": 1])
+        check("Managed keys are listed sorted", managed.managedKeys == ManagedPolicy.keys.sorted() && managed.ignoredKeys.isEmpty)
+        check("Managed hidden list is trimmed and deduplicated", managed.hiddenItems == ["menu:system:wifi", "menu:system:battery"])
+        check("Managed delay clamps high", managed.rehideDelay == 30)
+        check("Managed delay clamps low", ManagedPolicy(["RehideDelay": 0.2]).rehideDelay == 1)
+        let overlaid = managed.apply(to: chosen)
+        check("Managed hidden list applies to every realm", overlaid.realms.allSatisfy { $0.hiddenItems == ["menu:system:wifi", "menu:system:battery"] })
+        check("Managed hiding settings overlay preferences", overlaid.rehideDelay == 30 && overlaid.autoRehide == false && overlaid.hoverReveal == true)
+        check("Overlay keeps the user's saved choices", chosen.realms[1].hiddenItems == nil && overlaid.realms.map(\.pins) == chosen.realms.map(\.pins))
+        let wrong = ManagedPolicy(["HiddenItems": ["ok", 3], "AutoRehide": "yes", "RehideDelay": true, "DisableHiding": 1,
+                                   "DisableUpdates": "true", "LaunchAtLogin": [true], "HoverReveal": Double.nan])
+        check("Wrong types are ignored", !wrong.isManaged && wrong.hiddenItems == nil && wrong.autoRehide == nil && wrong.rehideDelay == nil
+              && !wrong.disableHiding && !wrong.disableUpdates && wrong.launchAtLogin == nil && wrong.hoverReveal == nil)
+        check("Ignored keys are reported", wrong.ignoredKeys == ["AutoRehide", "DisableHiding", "DisableUpdates", "HiddenItems", "HoverReveal", "LaunchAtLogin", "RehideDelay"])
+        check("Non-finite delay is ignored", ManagedPolicy(["RehideDelay": Double.infinity]).rehideDelay == nil)
+        check("Empty managed list unhides everything", ManagedPolicy(["HiddenItems": [String]()]).apply(to: chosen).realms.allSatisfy { $0.hiddenItems == [] })
+        let suite = "loki-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "DisableHiding")
+        check("User defaults are not treated as managed", !ManagedPolicy.read(from: defaults).isManaged)
+
+        // macOS 27 allowlist planning: item ownership.
+        check("Owner of identified extra", S.owner(ofItem: "menu:com.example.app:upload") == "com.example.app")
+        check("Owner of slot extra", S.owner(ofItem: "menu-slot:com.example.app:2") == "com.example.app")
+        check("Identifier colons stay in the identifier", S.owner(ofItem: "menu:com.example.app:a:b::c") == "com.example.app")
+        check("System controls have no owner", S.owner(ofItem: "menu:system:wifi") == nil && S.owner(ofItem: "menu-slot:system:0") == nil)
+        check("App IDs are not menu extras", S.owner(ofItem: "app:com.example.app") == nil)
+        for bad in ["", ":", "::", "menu", "menu:", "menu::id", "menu:com.example.app", "menu:com.example.app:", "Menu:com.example.app:x",
+                    "menuslot:com.example.app:1", "pin:com.example.app:x", " menu:com.example.app:x"] {
+            check("Malformed ID has no owner: '\(bad)'", S.owner(ofItem: bad) == nil)
+        }
+        for (bundle, identifier, slot) in [("com.example.app", "upload", 0), ("com.example.app", "", 3), ("org.x.Tool", "a:b:c", 1),
+                                           ("com.example.app", ":", 0), ("com.example.app", "::lead", 0), ("io.y", "", 0)] {
+            let id = MenuIdentity.thirdParty(bundle: bundle, identifier: identifier, slot: slot)
+            check("Third-party ID round-trips its owner: \(id)", S.owner(ofItem: id) == bundle)
+        }
+        for (identifier, title) in [("com.apple.menuextra.wifi", ""), ("", "Clock"), ("battery", "Battery"), ("", ""), ("x:y", "Odd:Title"),
+                                    ("com.apple.menuextra.controlcenter", "Control Center")] {
+            let id = MenuLabel.systemID(identifier: identifier, title: title)
+            check("System ID has no owner: \(id)", S.owner(ofItem: id) == nil)
+        }
+
+        // macOS 27 allowlist planning: which running apps stay allowed.
+        let own = "io.github.ChaosDeSelva.Loki"
+        let running = ["com.example.b", "com.example.a", "com.apple.controlcenter", "com.example.c"]
+        check("Empty choice allows every running app and Loki",
+              S.allowedBundles(running: running, hiddenItems: [], ownBundle: own) == (running + [own]).sorted())
+        check("Choosing one icon hides its app",
+              S.allowedBundles(running: running, hiddenItems: ["menu:com.example.a:upload"], ownBundle: own) == ["com.apple.controlcenter", "com.example.b", "com.example.c", own].sorted())
+        check("Slot IDs hide their app too",
+              !S.allowedBundles(running: running, hiddenItems: ["menu-slot:com.example.b:0"], ownBundle: own).contains("com.example.b"))
+        check("Several icons of one app hide it once",
+              S.allowedBundles(running: running, hiddenItems: ["menu:com.example.a:x", "menu:com.example.a:y", "menu-slot:com.example.a:1"], ownBundle: own)
+              == S.allowedBundles(running: running, hiddenItems: ["menu:com.example.a:x"], ownBundle: own))
+        check("Loki is never hidden", S.allowedBundles(running: running + [own], hiddenItems: ["menu:\(own):rune", "menu-slot:\(own):0"], ownBundle: own).contains(own))
+        check("Loki is allowed even when not listed as running", S.allowedBundles(running: [], hiddenItems: [], ownBundle: own) == [own])
+        check("Apple apps are never hidden",
+              S.allowedBundles(running: running, hiddenItems: ["menu:com.apple.controlcenter:wifi", "menu:com.apple.Siri:x"], ownBundle: own).contains("com.apple.controlcenter"))
+        check("Duplicates are removed and output sorted",
+              S.allowedBundles(running: ["z.app", "a.app", "z.app", own, "a.app"], hiddenItems: [], ownBundle: own) == ["a.app", own, "z.app"].sorted())
+        check("System IDs do not change the allowlist",
+              S.allowedBundles(running: running, hiddenItems: ["menu:system:wifi", "menu:system:clock", "app:com.example.a"], ownBundle: own)
+              == S.allowedBundles(running: running, hiddenItems: [], ownBundle: own))
+        check("Chosen apps that are not running are not added",
+              S.allowedBundles(running: running, hiddenItems: ["menu:com.absent.app:x"], ownBundle: own) == (running + [own]).sorted())
+        let mixed = S.allowedBundles(running: running, hiddenItems: ["menu:com.example.a:x", "menu:com.example.c:y", "menu:system:wifi"], ownBundle: own)
+        check("Allowlist is a sorted subset of running plus Loki",
+              mixed == mixed.sorted() && Set(mixed).isSubset(of: Set(running + [own])) && Set(mixed).count == mixed.count)
+        check("Allowlist drops exactly the chosen apps", Set(running + [own]).subtracting(mixed) == ["com.example.a", "com.example.c"])
+
+        // What the checklist may offer on each backend.
+        check("Allowlist offers third-party icons", S.hideable("menu:com.example.app:x", allowlist: true) && S.hideable("menu-slot:com.example.app:0", allowlist: true))
+        check("Allowlist refuses Apple-owned icons", !S.hideable("menu:com.apple.controlcenter:wifi", allowlist: true) && !S.hideable("menu-slot:com.apple.Siri:0", allowlist: true))
+        check("Allowlist refuses system controls", ["menu:system:wifi", "menu:system:clock", "menu:system:battery"].allSatisfy { !S.hideable($0, allowlist: true) })
+        check("Allowlist refuses malformed IDs", !S.hideable("", allowlist: true) && !S.hideable("app:com.example.app", allowlist: true))
+        check("Divider refuses pinned system icons", !S.hideable("menu:system:clock", allowlist: false) && !S.hideable("menu:system:controlcenter", allowlist: false))
+        check("Divider offers other system icons", S.hideable("menu:system:wifi", allowlist: false) && S.hideable("menu:system:battery", allowlist: false))
+        check("Divider offers third-party icons", S.hideable("menu:com.example.app:x", allowlist: false) && S.hideable("menu-slot:com.example.app:0", allowlist: false))
+        let sample = ["menu:com.example.app:x", "menu-slot:com.example.b:1", "menu:com.apple.Siri:x", "menu:system:wifi", "menu:system:clock", ""]
+        check("Anything hideable on the allowlist has an owner that can actually be hidden",
+              sample.filter { S.hideable($0, allowlist: true) }.allSatisfy { id in
+                  let owner = S.owner(ofItem: id)!
+                  return !S.allowedBundles(running: [owner], hiddenItems: [id], ownBundle: own).contains(owner)
+              })
+
+        // Managed hidden lists pass through the same planning.
+        let profile = ManagedPolicy(["HiddenItems": ["menu:com.example.a:x", "menu:system:clock", "menu:com.apple.Siri:x", "menu:system:wifi", "menu:\(own):rune"]])
+        let offered = profile.hiddenItems!.filter { S.hideable($0, allowlist: true, ownBundle: own) }
+        check("Managed list is filtered to hideable items on the allowlist", offered == ["menu:com.example.a:x"])
+        check("Loki's own icons are never hideable", !S.hideable("menu:\(own):rune", allowlist: true, ownBundle: own) && !S.hideable("menu:\(own):rune", allowlist: false, ownBundle: own))
+        check("Managed list is filtered to hideable items on the divider",
+              profile.hiddenItems!.filter { S.hideable($0, allowlist: false, ownBundle: own) } == ["menu:com.example.a:x", "menu:com.apple.Siri:x", "menu:system:wifi"])
+        check("Managed list never hides Loki or Apple on the allowlist",
+              S.allowedBundles(running: running + ["com.apple.Siri"], hiddenItems: Set(profile.hiddenItems!), ownBundle: own)
+              == ["com.apple.Siri", "com.apple.controlcenter", "com.example.b", "com.example.c", own].sorted())
+
+        // moves(): stability and boundaries.
+        check("Icon exactly at divider counts as visible", S.moves(items: [S.Placement(id: "edge", midX: 1000)], dividerMidX: 1000, hidden: []).isEmpty
+              && S.moves(items: [S.Placement(id: "edge", midX: 1000)], dividerMidX: 1000, hidden: ["edge"]) == [S.Move(id: "edge", toHidden: true)])
+        check("Chosen IDs that are not on screen produce no moves", S.moves(items: [], dividerMidX: 1000, hidden: ["ghost"]).isEmpty)
+        check("Moves preserve item order", S.moves(items: placements.reversed(), dividerMidX: 1000, hidden: ["right-chosen"]).map(\.id) == ["right-chosen", "left-unchosen", "left-chosen"])
+        var rng = SystemRandomNumberGenerator()
+        var settledOK = true, monotone = true
+        for _ in 0..<200 {
+            let divider = CGFloat(Int.random(in: 500...1500, using: &rng))
+            let items = (0..<Int.random(in: 0...12, using: &rng)).map { S.Placement(id: "i\($0)", midX: CGFloat(Int.random(in: 0...2000, using: &rng))) }
+            let picked = Set(items.map(\.id).filter { _ in Bool.random(using: &rng) })
+            let planned = S.moves(items: items, dividerMidX: divider, hidden: picked)
+            if planned.contains(where: { $0.toHidden != picked.contains($0.id) }) { monotone = false }
+            let toHidden = Dictionary(uniqueKeysWithValues: planned.map { ($0.id, $0.toHidden) })
+            let settled = items.map { item -> S.Placement in
+                guard let hide = toHidden[item.id] else { return item }
+                return S.Placement(id: item.id, midX: hide ? divider - 1 : divider + 1)
+            }
+            if !S.moves(items: settled, dividerMidX: divider, hidden: picked).isEmpty { settledOK = false }
+        }
+        check("Every move heads toward the chosen side", monotone)
+        check("Applying the planned moves leaves nothing to move", settledOK)
         print("\(passed) tests passed")
     }
 }

@@ -2,9 +2,9 @@
 
 Loki uses Sparkle 2.10.0. The release archive is pinned by checksum in scripts/prepare-sparkle.sh. The bundle contains the public update key; the private key remains in the publisher's login Keychain under the Loki-Menubar account. No private keys belong in this repository.
 
-1. Increment CFBundleVersion in scripts/build.sh for every published build. Update the package version and release links.
+1. Increment LOKI_BUILD_NUMBER (CFBundleVersion) in scripts/build.sh for every published build and set LOKI_RELEASE_LABEL. package.sh reads the label from the built app. Update the release links.
 2. Build with a Developer ID identity. The script signs nested Sparkle components before the host app. Ad-hoc source builds omit hardened runtime so local framework loading works; distributed builds require hardened runtime.
-3. Submit the app for Apple notarization and staple its ticket. Package it with scripts/package.sh, then notarize and staple the DMG.
+3. Run scripts/notarize.sh. It notarizes and staples the app, packages it with scripts/package.sh, notarizes and staples the DMG, and writes SHA256SUMS. docs/RELEASING.md has the setup and exact commands.
 4. Put only the finished ZIP in a staging feed directory. Generate the signed appcast using build/vendor/Sparkle/bin/generate_appcast with --account Loki-Menubar, --maximum-deltas 0, and --download-url-prefix pointing to the exact GitHub release tag's download directory.
 5. Verify the archive's Ed25519 signature and the signed appcast with sign_update --verify. Copy the generated appcast unchanged into docs/appcast.xml. Editing the signed XML invalidates its signature.
 6. Upload release assets before deploying the appcast; verify the live URLs, feed signature, version, archive length, and digest.

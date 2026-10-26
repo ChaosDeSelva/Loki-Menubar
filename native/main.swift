@@ -35,13 +35,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             let image = renderer.nsImage
             image?.isTemplate = true
             button.image = image
-            button.toolTip = "Loki · Control Option L"
+            button.toolTip = "Loki · Control Option L · Option-click to show hidden icons"
             button.target = self
             button.action = #selector(statusClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.setAccessibilityLabel("Loki")
         }
-        model.visibility.configure(anchor: statusItem)
+        let effective = model.effectivePreferences
+        model.visibility.configure(anchor: statusItem, hidden: model.hiddenSet,
+            delay: effective.rehideDelay ?? 3, autoRehide: effective.autoRehide ?? true,
+            hoverReveal: effective.hoverReveal ?? false)
         popover.delegate = self
         popover.behavior = .transient
         popover.appearance = NSAppearance(named: .darkAqua)
@@ -51,15 +54,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             MainActor.assumeIsolated {
             guard let self, let command = notification.userInfo?["command"] as? String else { return }
             switch command {
-            case "--reveal-all": self.model.visibility.stop()
+            case "--reveal-all": self.model.visibility.revealAll()
+            case "--toggle-hidden": self.model.visibility.toggle()
             case "--shelf": self.toggleShelf()
             case "--settings": self.openSettings()
             case "--status":
                 guard let request = notification.userInfo?["request"] as? String else { return }
                 DistributedNotificationCenter.default().postNotificationName(Notification.Name("LokiStatus"), object: request,
-                    userInfo: ["managing": self.model.visibility.managing, "concealed": self.model.visibility.concealed,
-                               "message": self.model.visibility.failure ?? "", "shelfOpen": self.popover.isShown, "applying": self.model.visibility.applying,
-                               "hidingSupported": self.model.visibility.supported, "hidingBackend": self.model.visibility.modern ? "app-selection" : "divider"], deliverImmediately: true)
+                    userInfo: ["concealed": self.model.visibility.concealed, "arranging": self.model.visibility.arranging,
+                               "hiddenCount": self.model.visibility.hidden.count, "mode": "\(self.model.visibility.mode)",
+                               "backend": self.model.visibility.backend.rawValue, "paused": self.model.visibility.paused, "orderingValid": self.model.visibility.mode == .idle || self.model.visibility.orderingValid,
+                               "message": self.model.visibility.failure ?? "", "shelfOpen": self.popover.isShown,
+                               "accessibility": MenuDiscovery.trusted], deliverImmediately: true)
             default: break
             }
             }
@@ -76,8 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         menu.addItem(withTitle: "About Loki", action: #selector(showAbout), keyEquivalent: "")
         menu.addItem(withTitle: "Open Loki", action: #selector(openMain), keyEquivalent: "0")
         menu.addItem(withTitle: "Summon Shelf", action: #selector(summonShelf), keyEquivalent: "")
+        menu.addItem(withTitle: "Show or Hide Hidden Icons", action: #selector(toggleHidden), keyEquivalent: "")
         menu.addItem(withTitle: "Reveal All Menu Bar Items", action: #selector(revealAll), keyEquivalent: "")
-        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "")
+        if !model.policy.disableUpdates { menu.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "") }
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Hide Loki", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -95,8 +102,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
 
     @objc private func statusClicked(_ sender: Any?) {
+        // Option-click shows or hides the hidden section, as the ‹ divider is off-screen while hidden.
+        // macOS 27 delivers status-item clicks without modifier flags, so read the live key state.
+        if NSApp.currentEvent?.type != .rightMouseUp, NSEvent.modifierFlags.contains(.option) || NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+            model.visibility.toggle(); return
+        }
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
+            menu.addItem(withTitle: model.visibility.concealed ? "Show Hidden Icons" : "Hide Icons", action: #selector(toggleHidden), keyEquivalent: "")
             menu.addItem(withTitle: "Open Loki", action: #selector(openMain), keyEquivalent: "")
             menu.addItem(withTitle: "Reveal All Menu Bar Items", action: #selector(revealAll), keyEquivalent: "")
             menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "")
@@ -110,7 +123,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
 
     func toggleShelf() {
-        model.visibility.reveal()
         if popover.isShown { closeShelf(); return }
         guard let button = statusItem.button, button.window != nil else { return }
         mainWindow?.orderOut(nil)
@@ -193,11 +205,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
     @objc private func openMain() { showMainWindow() }
     @objc private func summonShelf() { toggleShelf() }
-    @objc private func revealAll() { model.visibility.stop() }
+    @objc private func revealAll() { model.visibility.revealAll() }
+    @objc private func toggleHidden() { model.visibility.toggle() }
     @objc private func openSettings() { model.page = "settings"; showMainWindow() }
     @objc private func checkUpdates() { model.updater.checkForUpdates() }
     @objc private func showAbout() {
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Loki", .applicationVersion: "0.1.0", .credits: NSAttributedString(string: "A little order. A little mischief.\nA native, local menu utility for your Mac.")])
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Loki", .applicationVersion: lokiVersion, .credits: NSAttributedString(string: "A little order. A little mischief.\nA native, local menu utility for your Mac.")])
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { toggleShelf(); return false }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -213,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         model.shortcutRegistered = result == noErr
     }
     func applicationWillTerminate(_ notification: Notification) {
-        model?.visibility.stop()
+        model?.visibility.restoreForQuit()
         removeDismissalMonitors()
         if let hotKey { UnregisterEventHotKey(hotKey) }
         if let eventHandler { RemoveEventHandler(eventHandler) }
@@ -221,7 +234,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 }
 
 let app = NSApplication.shared
-let commands = ["--reveal-all", "--shelf", "--settings", "--status"]
+let commands = ["--reveal-all", "--toggle-hidden", "--shelf", "--settings", "--status"]
+/// One version source: the bundle's Info.plist, written by scripts/build.sh.
+/// Mirrors VisibilityController's backend choice without creating one.
+let lokiUsesAllowlist = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 && MenuBarVisibility.available
+let lokiVersion = Bundle.main.object(forInfoDictionaryKey: "LokiReleaseLabel") as? String
+    ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
 if let command = CommandLine.arguments.first(where: { commands.contains($0) }) {
     let bundle = Bundle.main.bundleIdentifier ?? "io.github.ChaosDeSelva.Loki"
     let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).contains { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
@@ -240,11 +258,24 @@ if let command = CommandLine.arguments.first(where: { commands.contains($0) }) {
     }
     DistributedNotificationCenter.default().removeObserver(observer)
     if command == "--status" && !received { fputs("Loki did not respond.\n", stderr); exit(2) }
+} else if CommandLine.arguments.contains("--list-items") {
+    // Menu-extra IDs for an organization's HiddenItems list (docs/MDM.md).
+    guard MenuDiscovery.trusted else {
+        fputs("Allow Accessibility for the app running this command, then try again.\n", stderr); exit(1)
+    }
+    let rows: [[String: Any]] = MenuDiscovery.scan().items.filter { $0.kind != .app }
+        .sorted { $0.id < $1.id }
+        .map { ["id": $0.id, "title": $0.title, "owner": $0.appName, "hideable": MenuBarSections.hideable($0.id, allowlist: lokiUsesAllowlist)] }
+    if let data = try? JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys]) {
+        print(String(decoding: data, as: UTF8.self))
+    }
 } else if CommandLine.arguments.contains("--diagnose") {
+    let policy = ManagedPolicy.current
     let result = MenuDiscovery.trusted ? MenuDiscovery.scan() : DiscoveryResult(items: [], scanned: 0, unresponsive: 0)
-    let report: [String: Any] = ["version": "0.1.0", "os": ProcessInfo.processInfo.operatingSystemVersionString,
+    let report: [String: Any] = ["version": lokiVersion, "os": ProcessInfo.processInfo.operatingSystemVersionString,
         "accessibility": MenuDiscovery.trusted, "menuItemCount": result.items.count, "scannedProcesses": result.scanned,
-        "runningAppCount": MenuDiscovery.appShortcuts().count, "screenCapture": false, "systemHiding": false]
+        "runningAppCount": MenuDiscovery.appShortcuts().count, "screenCapture": false, "privateFrameworks": lokiUsesAllowlist, "hidingBackend": ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? (lokiUsesAllowlist ? "allowlist" : "unavailable") : "divider",
+        "managedKeys": policy.managedKeys, "ignoredManagedKeys": policy.ignoredKeys]
     if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
         print(String(decoding: data, as: UTF8.self))
     }

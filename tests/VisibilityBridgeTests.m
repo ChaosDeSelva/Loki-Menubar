@@ -49,6 +49,16 @@ int main() { @autoreleasepool {
     check(old.invalidated && !current.invalidated && completions == 0, @"Stale success cannot cancel the replacement");
     current.reply(nil); drain();
     check(completions == 1 && !current.invalidated, @"Current success remains active until reveal");
+    [bridge applyAllowedBundles:@[@"self", @"third"] systemItems:@[@0] completion:success];
+    MBAssessmentModeAssertion *refresh = requests.lastObject;
+    check(!current.invalidated, @"Refresh keeps the confirmed hide until macOS confirms the replacement");
+    refresh.reply(nil); drain();
+    check(current.invalidated && !refresh.invalidated && completions == 2, @"Confirmed refresh replaces the previous hide");
+    [bridge applyAllowedBundles:@[@"self"] systemItems:@[@0] completion:^(NSError *error) {}];
+    MBAssessmentModeAssertion *failedRefresh = requests.lastObject;
+    failedRefresh.reply([NSError errorWithDomain:@"Test" code:2 userInfo:nil]); drain();
+    check(failedRefresh.invalidated && !refresh.invalidated, @"Failed refresh leaves the confirmed hide in place");
+    current = refresh;
     [bridge invalidate];
     check(current.invalidated, @"Reveal releases current assertion");
 
@@ -69,7 +79,7 @@ int main() { @autoreleasepool {
     MBAssessmentModeAssertion *orphan = requests.lastObject;
     check(orphan.invalidated, @"Owner destruction invalidates pending assertion");
     orphan.reply(nil); drain();
-    check(completions == 1, @"Destroyed owner cannot publish late success");
+    check(completions == 2, @"Destroyed owner cannot publish late success");
     for (MBAssessmentModeAssertion *request in requests) request.reply = nil;
     printf("%d bridge lifecycle checks passed\n",checks);
 }}

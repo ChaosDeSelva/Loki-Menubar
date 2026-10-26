@@ -126,6 +126,22 @@ enum MenuDiscovery {
         return DiscoveryResult(items: items, scanned: scanned, unresponsive: unresponsive, legacyAliases: aliases.filter { !seen.contains($0.key) })
     }
 
+    /// Top-left-origin screen rectangle of a menu extra, or nil when it has no plausible size.
+    static func frame(_ element: AXUIElement) -> CGRect? {
+        // A hung owner must not stall Loki's main thread for the default AX timeout.
+        AXUIElementSetMessagingTimeout(element, 0.3)
+        guard let positionValue = attribute(element, kAXPositionAttribute),
+              let sizeValue = attribute(element, kAXSizeAttribute),
+              CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID() else { return nil }
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(unsafeBitCast(positionValue, to: AXValue.self), .cgPoint, &position),
+              AXValueGetValue(unsafeBitCast(sizeValue, to: AXValue.self), .cgSize, &size),
+              size.width > 0, size.width < 500, size.height > 0, size.height < 80 else { return nil }
+        return CGRect(origin: position, size: size)
+    }
+
     static func activate(_ item: ShelfItem) -> String? {
         guard let owner = NSRunningApplication(processIdentifier: item.pid), !owner.isTerminated,
               owner.bundleIdentifier == item.bundleID else { return "The menu owner has quit. Refresh the shelf." }
@@ -140,20 +156,9 @@ enum MenuDiscovery {
         // Avoid remote AX actions remaining pending during menu tracking.
         // Use the same down/up sequence as a real click,
         // and only for a freshly resolved menu-extra rectangle on a screen edge.
-        guard let positionValue = attribute(element, kAXPositionAttribute),
-              let sizeValue = attribute(element, kAXSizeAttribute),
-              CFGetTypeID(positionValue) == AXValueGetTypeID(),
-              CFGetTypeID(sizeValue) == AXValueGetTypeID() else {
-            return "This item has no clickable position. Open it directly from the menu bar."
-        }
-        var position = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(unsafeBitCast(positionValue, to: AXValue.self), .cgPoint, &position),
-              AXValueGetValue(unsafeBitCast(sizeValue, to: AXValue.self), .cgSize, &size),
-              size.width > 0, size.width < 500, size.height > 0, size.height < 80 else {
+        guard let rectangle = frame(element) else {
             return "This menu item is no longer visible. Reveal it and refresh."
         }
-        let rectangle = CGRect(origin: position, size: size)
         var displayCount: UInt32 = 0
         guard CGGetActiveDisplayList(0, nil, &displayCount) == .success, displayCount > 0 else { return "No active display." }
         var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))

@@ -4,7 +4,8 @@ Loki is an early preview. These are planned improvements, not shipped capabiliti
 
 ## First: dependable menu access
 
-- Verify physical hiding and hover reveal on supported macOS versions, notched displays, and multiple monitors. Test open menus, full screen, Spaces, sleep, display reconnects, and app restarts. Keep Reveal All reachable in every state.
+- Verify on macOS 14 to 26 hardware that Loki’s Command-drags move other apps’ icons and that widening the divider pushes them off-screen. Verify the alpha 6 allowlist end to end on macOS 27, including app launch and quit. Then verify reveal, hover reveal, and rehide on both, on notched displays and multiple monitors. Test open menus, full screen, Spaces, sleep, display reconnects, and app restarts. Keep Reveal All reachable in every state.
+- Watch each macOS 27 update for changes to the undocumented allowlist, and adopt a public interface if Apple provides one.
 - Improve overflow access for items behind the notch or offscreen. Never activate an unverified coordinate or the application menu in place of a status item.
 - Preserve item identity when a utility changes its title or restarts; avoid duplicate system entries and stale assignments.
 

@@ -10,6 +10,18 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Shellcheck release scripts
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            if command -v brew >/dev/null 2>&1; then
+              brew install shellcheck
+            else
+              echo '::warning::shellcheck and Homebrew unavailable; skipping shellcheck.'
+              exit 0
+            fi
+          fi
+          for script in scripts/*.sh; do bash -n "$script"; done
+          shellcheck scripts/*.sh
       - name: Regression tests
         run: bash scripts/test.sh
       - name: Build app (ad-hoc signature)

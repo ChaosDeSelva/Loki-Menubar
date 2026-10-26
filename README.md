@@ -6,50 +6,47 @@ A little order. A little mischief. An original Swift/AppKit menu-bar utility for
 
 ## Release status
 
-**0.1.0-alpha.5 is an early preview.** Apple Silicon; macOS 14 or later. Release checks ran on macOS 27.0.1. Earlier macOS versions and notched MacBooks are not yet verified. See the explicit feature gaps below before installing.
+**0.1.0-alpha.6 is an early preview, not yet published.** The latest published build is alpha 5. Apple Silicon; macOS 14 or later. Release checks ran on macOS 27.0.1. Alpha 6 hides icons two ways, depending on the macOS version: per icon behind a public divider on macOS 14 to 26, and per app through an undocumented Apple interface on macOS 27. Neither is verified end to end on hardware yet; see [Hide icons](#hide-icons). Earlier macOS versions, notched MacBooks, and multiple displays are not yet verified. See the explicit feature gaps below before installing.
 
 ## What is included
 
 - A menu-bar dropdown, separate from the explicitly opened settings window; no Dock icon or launch-time window.
 - Search, arrow-key navigation, Return to open, favorites, and drag ordering within Loki’s shelf.
 - Separate sources for real menu extras and running-application shortcuts.
-- Three renameable realms with independent favorites, order, and custom groups. Open Groups to create, rename, or remove categories such as Development, Meetings, or Home. Right-click a row to assign its group. Renaming retains assignments; removing a group returns items to Ungrouped.
+- Three renameable realms with independent favorites, order, custom groups, and hidden-icon choices. Open Groups to create, rename, or remove categories such as Development, Meetings, or Home. Right-click a row to assign its group. Renaming retains assignments; removing a group returns items to Ungrouped.
 - Menu discovery restricted to Accessibility menu-extra trees, excluding the Apple/File/Edit trees.
 - Opening an item closes Loki first, resolves its accessible position, and posts a normal mouse click off the UI thread. Stale/unpositioned items fail with an explanation.
-- An explicit close button, Escape, outside-click dismissal, and Control–Option–L to summon/toggle the shelf.
-- App-based icon hiding on macOS 27 and an experimental divider on macOS 14–26; hover reveal, delayed rehide, and reveal-all recovery.
+- An explicit close button, Escape, outside-click dismissal, and Control-Option-L to summon/toggle the shelf.
+- Icon hiding with one checklist: per icon behind a divider on macOS 14 to 26, per app on macOS 27. Option-click reveal, optional hover reveal, delayed rehide, and reveal-all recovery on both.
 - Launch at login, three accent colors, local preferences, and preservation of corrupted settings files.
-- CLI commands for the shelf, settings, reveal-all, and privacy-limited diagnostics.
-- No analytics, accounts, or screen capture. macOS 27 hiding uses an undocumented system framework. Sparkle is the bundled update dependency; automatic checks are opt-in.
+- CLI commands for the shelf, settings, hidden icons, reveal-all, status, and privacy-limited diagnostics.
+- No analytics, accounts, or screen capture. macOS 14 to 26 uses public interfaces only; macOS 27 uses one undocumented interface, because no public one can hide icons there. Sparkle is the bundled update dependency; automatic checks are opt-in.
 
 ## Install
 
 Download the Apple Silicon DMG from [Releases](https://github.com/ChaosDeSelva/Loki-Menubar/releases), open it, and drag **Loki.app** into **Applications**. Launch Loki, then click its rune icon in the menu bar. Use the expand button to open the main window.
 
-App shortcuts do not need Accessibility. Menu extras do: in **Menu items**, choose **Allow Accessibility** and enable the installed app in System Settings. A previous development build may have a different bundle identifier and permission entry; the public release uses `io.github.ChaosDeSelva.Loki`.
+App shortcuts do not need Accessibility. Menu extras and the hidden-icons checklist do, and on macOS 14 to 26 so does moving icons: in **Menu items** or **Menu bar**, choose **Allow Accessibility** and enable the installed app in System Settings. A previous development build may have a different bundle identifier and permission entry; the public release uses `io.github.ChaosDeSelva.Loki`.
 
-## Tuck icons on macOS 27
+## Hide icons
 
-1. Open Loki’s full window and select **Menu bar**.
-2. Select the apps whose icons you want tucked away. Choices are saved in the current realm.
-3. Click **Tuck icons**. Loki closes its window; move away from the menu bar and wait for the selected delay.
-4. Hover near the menu bar to reveal, or use **Reveal All Menu Bar Items** from Loki’s menu.
+1. Open Loki’s full window and select **Menu bar**. Loki lists your menu-bar icons through Accessibility.
+2. Switch on the icons you want out of sight. Choices are saved in the current realm.
+3. Click **Apply**.
 
-All icons belonging to an app hide together across every display. Apple system controls and Loki are included in the allowlist. This mode uses the installed MenuBarClientCore framework, an undocumented interface that may change with an OS update. If the expected interface is absent, hiding stays disabled. Hiding starts only when you request it, never automatically at launch.
+What happens next depends on the macOS version.
 
-## Tuck icons on macOS 14–26 (compatibility preview)
+**macOS 14 to 26: per icon, public interfaces.** Loki Command-drags each chosen icon to the left of its divider, an ordinary status item next to the rune, then checks through Accessibility that each one moved. Your pointer moves briefly and returns afterwards. Loki then widens the divider so the icons left of it go off-screen. Clock and Control Center cannot be moved; macOS pins them. Some apps may refuse the drag, and Loki reports how many icons could not be moved. Unchosen icons left of the divider are moved back to its right. This is implemented, not yet verified on macOS 14 to 26 hardware.
 
-1. Open **Menu bar → Show divider**.
-2. Hold Command and drag the filter-shaped divider to the **left** of Loki’s rune icon.
-3. Command-drag the icons you want tucked away to the left of that divider.
-4. Choose **Tuck icons** and move the pointer away from the menu bar.
-5. Hover near the top of a display to reveal. Open Loki or choose **Reveal All Menu Bar Items** to recover.
+**macOS 27: per app, one undocumented interface.** Measured on macOS 27.0.1 on one Mac: synthesized Command-drags do move other apps’ icons, and Accessibility reports their positions, but widening a status item pushes icons left only while the item fits. On a 3,360-point display with app menus ending at x=509, that was up to about 1,660 points, and at that width the icon was still on screen. Any wider, macOS drops the widened item and the icons return. A normal app therefore cannot push icons off-screen on macOS 27, so the divider cannot hide anything there. Instead Loki uses Apple’s undocumented MenuBarClientCore allowlist. It is looked up while Loki runs; nothing is linked or bundled, and hiding turns itself off if the interface is missing or has changed. The allowlist works per app: choosing any icon of an app hides all of that app’s icons. Apple’s system controls and Loki itself always stay visible and are not offered. Hiding itself does not need Accessibility. Apps launched while icons are hidden stay visible, because Loki refreshes the allowlist when an app launches or quits instead of revealing everything. In alpha 5, a user saw a test icon disappear on hide and return on reveal; alpha 6 on macOS 27 is pending end-to-end verification.
 
-The divider changes the width of an ordinary `NSStatusItem`. macOS owns placement; some icons cannot be moved. On macOS 14–26 it remains an experimental feature, not a qualified production layout. Hiding never starts automatically at launch. Display changes, sleep, and quitting stop it; Space changes reveal icons. Rehide waits while a popup, mouse press, or Command-drag is detected. **Reveal All** removes the divider entirely.
+To get icons back: Option-click the rune, right-click it and choose **Show Hidden Icons**, choose **Show or Hide Hidden Icons** from Loki’s app menu, or run `--toggle-hidden`. Hover reveal is available in **Menu bar** and is off by default; it reacts only to the menu-bar band itself. On macOS 14 to 26, click the ‹ chevron on the divider to hide them again. By default they rehide 3 seconds after the pointer leaves the menu bar, and rehiding waits while a menu is open, a mouse button is down, or Command is held. On macOS 27, rehiding asks macOS again; if macOS does not confirm within 5 seconds, Loki shows everything. Hidden icons stay on Loki’s shelf; opening one reveals them first. Alpha 5 per-app choices are not carried over; choose icons again after updating.
+
+**Recovery.** Neither mechanism is saved: the divider’s width and the allowlist both end with Loki, so quitting Loki, or a crash, shows every icon (by design; recovery after a forced crash has not been tested). **Reveal All Menu Bar Items** shows everything and pauses rehiding until you hide again. On macOS 14 to 26 a display change reveals the section. At launch, if icons were chosen, Loki hides them again after about a second.
 
 ## Current limitations
 
-No always-hidden tier, automatic physical-icon sorting, per-display layouts, icon image replication below a notch, custom global shortcut editor, spacing/tint/shape customization of the system bar, or background physical-layout automation. Groups organize the shelf. Realms also store app-hiding selections on macOS 27; switching realms reveals everything until you explicitly tuck again. Hidden/notch-obscured items must first be visible before Loki can click them. Some apps expose incomplete Accessibility labels or no position. Multi-monitor and full-screen behavior needs broader verification.
+No always-hidden tier, per-display layouts, icon image replication below a notch, custom global shortcut editor, spacing/tint/shape customization of the system bar, or background physical-layout automation. Groups organize the shelf. Switching to a realm with different hidden-icon choices applies them again (on macOS 14 to 26, by moving icons). On macOS 27 hiding is per app, and Apple’s own menu-bar icons cannot be hidden. While icons are hidden on macOS 27, macOS itself may stop the clock from opening Notification Center and may hide Now Playing; Loki shows every icon while a microphone or camera is in use so the recording indicators stay intact. Run Loki from your Applications folder: on macOS 27 a copy elsewhere is not matched by macOS and would hide its own icon, so Loki refuses to hide from there. Notch-obscured items must first be visible before Loki can click them. Some apps expose incomplete Accessibility labels or no position. Multi-display, notch, sleep/wake, and full-screen behavior of both hiding mechanisms, and all macOS 14 to 26 hiding, are implemented, not yet verified on hardware.
 
 Loki is an independently developed utility. Its supported capabilities and remaining work are documented in the compatibility ledger.
 
@@ -69,7 +66,7 @@ The build defaults to an ad-hoc local signature. For a Developer ID build:
 LOKI_SIGN_IDENTITY='Developer ID Application: Your Organization (TEAMID)' bash scripts/build.sh
 ```
 
-Signing credentials are external to the repository. `LOKI_BUNDLE_ID` can override the bundle identifier for local development. Do not publish private certificates, keychain profiles, local preferences, or raw diagnostic logs.
+Releases are moving to Developer ID signing and notarization; see [docs/RELEASING.md](docs/RELEASING.md) for the release process. Signing credentials are external to the repository. `LOKI_BUNDLE_ID` can override the bundle identifier for local development. Do not publish private certificates, keychain profiles, local preferences, or raw diagnostic logs.
 
 ## Command line
 
@@ -78,17 +75,18 @@ With the installed app running:
 ```sh
 /Applications/Loki.app/Contents/MacOS/Loki --shelf
 /Applications/Loki.app/Contents/MacOS/Loki --settings
+/Applications/Loki.app/Contents/MacOS/Loki --toggle-hidden
 /Applications/Loki.app/Contents/MacOS/Loki --reveal-all
 /Applications/Loki.app/Contents/MacOS/Loki --status
 ```
 
-`--diagnose` runs a standalone count-only discovery report. It contains no menu titles, file names, app list, or preferences. The CLI uses local notifications, not a network listener.
+`--status` prints JSON with `concealed`, `arranging`, `hiddenCount`, `mode`, `backend` (`divider`, `allowlist`, or `unavailable`), `paused`, `orderingValid`, `message`, `shelfOpen`, and `accessibility`. `--diagnose` runs a standalone count-only discovery report. It reports `hidingBackend` (`divider`, `allowlist`, or `unavailable`) and `privateFrameworks`, which is `true` only when the macOS 27 allowlist is in use. It contains no menu titles, file names, app list, or preferences. The CLI uses local notifications, not a network listener.
 
 ## Data and uninstall
 
-Preferences live in `~/Library/Application Support/Loki/preferences.json`. They contain realm names, saved item identifiers, group assignments, and preferences. There is no cloud sync. See [PRIVACY.md](PRIVACY.md).
+Preferences live in `~/Library/Application Support/Loki/preferences.json`. They contain realm names, saved item identifiers, hidden-icon choices, group assignments, and preferences. There is no cloud sync. See [PRIVACY.md](PRIVACY.md).
 
-To uninstall: disable launch at login, quit Loki (which releases hiding and removes any divider), then move Loki.app to Trash. Optionally remove the preferences folder and the Loki Accessibility entry in System Settings. Other apps and their data are not removed.
+To uninstall: disable launch at login, quit Loki (which shows every icon), then move Loki.app to Trash. Optionally remove the preferences folder and the Loki Accessibility entry in System Settings. Other apps and their data are not removed.
 
 ## Contributing
 
@@ -100,4 +98,6 @@ See [the roadmap](ROADMAP.md) for prioritized improvements and release-quality c
 
 Compact popup controls, consistent form heights, group deletion confirmation and session undo, improved system-menu labels, and signed in-app updates. Automatic update checks are opt-in in Settings.
 
-**macOS 27:** app-selection hiding replaces the old divider. Build and lifecycle checks pass, and a user-observed test confirmed hide/reveal while other icons remained visible. Forced-process-death recovery and broader display qualification remain unverified. The divider remains experimental on macOS 14–26.
+### Alpha 6 changes
+
+Hiding is chosen per icon from one checklist. On macOS 14 to 26, Loki moves chosen icons behind its public divider itself, verifies each move, and widens the divider; the manual Command-drag setup is gone. On macOS 27, where measurement showed widening cannot push icons off-screen, Loki keeps the undocumented allowlist, now refreshed when apps launch or quit so new apps stay visible, and confirmed within 5 seconds or everything is shown. The version shown in the app is read from its Info.plist. Releases move to Developer ID signing and notarization. Unit tests and the signed ad-hoc build pass on macOS 27.0.1. Hiding on macOS 14 to 26 is not yet verified on hardware, and alpha 6 hiding on macOS 27 is pending end-to-end verification; see [COMPATIBILITY.md](COMPATIBILITY.md).
