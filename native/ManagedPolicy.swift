@@ -67,9 +67,11 @@ struct ManagedPolicy: Equatable {
     /// Reads only the keys an installed profile forces for this app's domain.
     static var current: ManagedPolicy { read(from: .standard) }
 
-    static func read(from defaults: UserDefaults) -> ManagedPolicy {
+    /// `isForced` defaults to the profile check; tests substitute it, since forcing a key
+    /// for real needs an MDM-installed configuration profile.
+    static func read(from defaults: UserDefaults, isForced: ((String) -> Bool)? = nil) -> ManagedPolicy {
         var forced: [String: Any] = [:]
-        for key in keys where defaults.objectIsForced(forKey: key) {
+        for key in keys where isForced?(key) ?? defaults.objectIsForced(forKey: key) {
             if let value = defaults.object(forKey: key) { forced[key] = value }
         }
         return ManagedPolicy(forced)

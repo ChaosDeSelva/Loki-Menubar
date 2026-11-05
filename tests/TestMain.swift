@@ -270,6 +270,35 @@ enum Tests {
         }
         check("Every move heads toward the chosen side", monotone)
         check("Applying the planned moves leaves nothing to move", settledOK)
+        let forcedSuite = "loki-tests-forced-\(UUID().uuidString)"
+        let forcedDefaults = UserDefaults(suiteName: forcedSuite)!
+        forcedDefaults.set(["menu:com.example.app:x"], forKey: "HiddenItems")
+        forcedDefaults.set(true, forKey: "DisableUpdates")
+        forcedDefaults.set(true, forKey: "HoverReveal")
+        let forcedPolicy = ManagedPolicy.read(from: forcedDefaults, isForced: { $0 != "HoverReveal" })
+        check("Only profile-forced keys are managed", forcedPolicy.managedKeys == ["DisableUpdates", "HiddenItems"] && forcedPolicy.hiddenItems == ["menu:com.example.app:x"])
+        forcedDefaults.removePersistentDomain(forName: forcedSuite)
+        check("Unmanaged Mac reads no policy", !ManagedPolicy.current.isManaged || !ManagedPolicy.current.managedKeys.isEmpty)
+        check("Group errors explain themselves", GroupNameError("Use another name.").errorDescription == "Use another name." && (GroupNameError("x") as Error).localizedDescription == "x")
+        check("Preferences live in Application Support", PreferenceStore().url.path.hasSuffix("Application Support/Loki/preferences.json"))
+        var orphaned = Realm.defaults[0]
+        orphaned.groupNames = ["Work"]; orphaned.groups = ["a": "Legacy"]
+        check("Groups only present in assignments are still listed", orphaned.availableGroups == ["Work", "Legacy"])
+        do { _ = try orphaned.setGroupName("New", replacing: "Gone"); check("Renaming a removed group is refused", false) }
+        catch { check("Renaming a removed group is refused", error.localizedDescription == "This group no longer exists.") }
+        var aliasMove = Preferences()
+        aliasMove.realms[0].groups = ["old-id": "Work"]
+        check("Alias migration carries a group to an unassigned new ID", aliasMove.migrateItemAliases(["old-id": "new-id"]) && aliasMove.realms[0].groups == ["new-id": "Work"])
+        var mirrored = Preferences()
+        mirrored.realms[0].groups = ["menu:system:wifi": "Home", "menu:com.apple.controlcenter:com.apple.controlcenter.WiFi": "Work", "menu:example:z": "Work", "menu:example:a": "Home"]
+        _ = mirrored.migrateSystemItemIDs()
+        check("Canonical system assignment wins over a mirrored legacy host", mirrored.realms[0].groups?["menu:system:wifi"] == "Home" && mirrored.realms[0].groups?.count == 3)
+        var partial = Realm.defaults[0]; partial.order = ["b"]
+        let ordered = ShelfRecord(id: "b", title: "Same", app: "x"), unordered = ShelfRecord(id: "a", title: "Same", app: "x")
+        check("Stored order beats unordered items", ShelfEngine.arrange([unordered, ordered], realm: partial, query: "", favoritesOnly: false) == ["b", "a"])
+        check("Equal titles fall back to stable IDs", ShelfEngine.arrange([ShelfRecord(id: "z", title: "Same", app: "x"), unordered], realm: Realm.defaults[0], query: "", favoritesOnly: false) == ["a", "z"])
+        check("Third-party titles are kept and trimmed to 100 characters", MenuLabel.resolve(identifier: "", title: String(repeating: "t", count: 150), description: "", help: "", owner: "Owner", system: false)?.count == 100)
+        check("Bare Control Center identifier resolves", MenuLabel.resolve(identifier: "com.apple.controlcenter", title: "", description: "", help: "", owner: "", system: true) == "Control Center")
         print("\(passed) tests passed")
     }
 }

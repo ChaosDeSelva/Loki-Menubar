@@ -7,23 +7,36 @@ import AppKit
 ///   (measured on 27.0.1). The only working mechanism is Apple's undocumented allowlist,
 ///   which hides whole apps. It is resolved at runtime and turns itself off if absent.
 /// Neither state is persisted: quitting or a crash always leaves every icon visible.
+/// The macOS 27 mechanism, behind a seam so the controller's bookkeeping can be tested
+/// without touching the real menu bar. `MenuBarVisibility` is the production conformance.
+protocol MenuBarAllowlist: AnyObject {
+    func hide(_ items: Set<String>, completion: @escaping (String?) -> Void)
+    func reveal()
+}
+extension MenuBarVisibility: MenuBarAllowlist {}
+
 @MainActor
 final class VisibilityController: NSObject, ObservableObject {
     enum Backend: String { case divider, allowlist, unavailable }
 
+    nonisolated static var systemBackend: Backend {
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else { return .divider }
+        return MenuBarVisibility.available ? .allowlist : .unavailable
+    }
+
     @Published private(set) var mode = MenuBarSections.Mode.idle
     @Published private(set) var failure: String?
     @Published private(set) var summary: String?
-    let backend: Backend = {
-        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else { return .divider }
-        return MenuBarVisibility.available ? .allowlist : .unavailable
-    }()
+    let backend: Backend
     var concealed: Bool { mode == .collapsed }
     var arranging: Bool { mode == .arranging }
     var usesAllowlist: Bool { backend == .allowlist }
     private(set) var hidden = Set<String>()
     private(set) var paused = false
-    private let allowlist = MenuBarVisibility()
+    private let allowlist: MenuBarAllowlist
+    private let captureInUse: () -> Bool
+    private let installed: () -> Bool
+    private let confirmationTimeout: TimeInterval
     private var allowlistRequest = 0
     private var divider: NSStatusItem?
     private weak var anchor: NSStatusItem?
@@ -36,7 +49,7 @@ final class VisibilityController: NSObject, ObservableObject {
     private var revealRequested = false
     /// An allowlist hide macOS has not confirmed yet. While set, nothing re-requests it:
     /// each new request invalidates the previous one, so repeating it could starve the hide.
-    private var allowlistPending = false
+    private(set) var allowlistPending = false
     private var refreshWork: DispatchWorkItem?
     /// macOS 27 only: icons are shown because a microphone or camera is in use.
     @Published private(set) var privacyHold = false
@@ -129,7 +142,7 @@ final class VisibilityController: NSObject, ObservableObject {
         }
         paused = false
         revealRequested = false
-        if privacyHold && CaptureActivity.inUse { return }
+        if privacyHold && captureInUse() { return }
         privacyHold = false
         switch backend {
         case .divider:
@@ -139,7 +152,7 @@ final class VisibilityController: NSObject, ObservableObject {
             }
             setMode(.collapsed)
         case .allowlist:
-            guard Self.installedInApplications else {
+            guard installed() else {
                 setFailure("Move Loki to your Applications folder first. On macOS 27, hiding also hides apps macOS does not track, and a copy outside Applications would hide Loki’s own icon.")
                 pause(); return
             }
@@ -179,7 +192,7 @@ final class VisibilityController: NSObject, ObservableObject {
                 } else if self.mode == .revealed { self.setMode(.collapsed) }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + confirmationTimeout) { [weak self] in
             guard let self, self.allowlistRequest == request, self.allowlistPending else { return }
             self.cancelAllowlist()
             if self.mode == .collapsed { self.setMode(.revealed) }
@@ -196,6 +209,8 @@ final class VisibilityController: NSObject, ObservableObject {
 
     /// The allowlist shrinks the system's recording indicators to a dot, so show every icon
     /// while capture is active and tuck them away again afterwards.
+    func checkCapture() { holdForCapture(captureInUse()) }
+
     private func holdForCapture(_ inUse: Bool) {
         if inUse && mode == .collapsed {
             setMode(.revealed)
@@ -250,7 +265,7 @@ final class VisibilityController: NSObject, ObservableObject {
     private func tick() {
         if backend == .allowlist && (mode == .collapsed || privacyHold) {
             captureCheck += 1
-            if captureCheck % 3 == 0 { holdForCapture(CaptureActivity.inUse) }
+            if captureCheck % 3 == 0 { checkCapture() }
             if privacyHold { return }
         }
         let inBar = Self.pointerInMenuBar
@@ -291,7 +306,7 @@ final class VisibilityController: NSObject, ObservableObject {
 
     /// Measured on macOS 27.0.1: the allowlist kept Loki's icon only for a copy in /Applications.
     /// A build-folder copy, signed or not, disappeared along with the apps it was asked to hide.
-    static var installedInApplications: Bool {
+    nonisolated static var installedInApplications: Bool {
         let path = Bundle.main.bundleURL.deletingLastPathComponent().path
         return path == "/Applications" || path.hasSuffix("/Applications") || path.hasPrefix("/Applications/")
     }
@@ -306,7 +321,15 @@ final class VisibilityController: NSObject, ObservableObject {
         }
     }
 
-    override init() {
+    init(backend: Backend = VisibilityController.systemBackend, allowlist: MenuBarAllowlist = MenuBarVisibility(),
+         captureInUse: @escaping () -> Bool = { CaptureActivity.inUse },
+         installed: @escaping () -> Bool = { VisibilityController.installedInApplications },
+         confirmationTimeout: TimeInterval = 5) {
+        self.backend = backend
+        self.allowlist = allowlist
+        self.captureInUse = captureInUse
+        self.installed = installed
+        self.confirmationTimeout = confirmationTimeout
         super.init()
         // A new display arrangement can strand the divider: hold everything visible while it
         // settles, then hide again only if the layout is still sound.
@@ -329,15 +352,18 @@ final class VisibilityController: NSObject, ObservableObject {
                     guard let self, self.backend == .allowlist else { return }
                     // Coalesce bursts, such as login, into one refresh.
                     self.refreshWork?.cancel()
-                    let work = DispatchWorkItem { [weak self] in
-                        guard let self, self.mode == .collapsed || self.allowlistPending else { return }
-                        self.hideWithAllowlist()
-                    }
+                    let work = DispatchWorkItem { [weak self] in self?.refreshAllowlist() }
                     self.refreshWork = work
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
                 }
             })
         }
+    }
+
+    /// Re-issues a live or pending hide so apps launched since then are allowed.
+    func refreshAllowlist() {
+        guard backend == .allowlist, mode == .collapsed || allowlistPending else { return }
+        hideWithAllowlist()
     }
 
     /// Called from applicationWillTerminate; macOS also drops both mechanisms when the process exits.
