@@ -1,8 +1,20 @@
-<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+<?xml version="1.0" standalone="yes"?>
+<!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+-->
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>Loki</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Wed, 04 Nov 2026 23:57:53 -0800</pubDate>
+            <link>https://chaosdeselva.github.io/Loki-Menubar/</link>
+            <sparkle:version>8</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/ChaosDeSelva/Loki-Menubar/releases/download/v0.1.0-alpha.6/Loki-Menubar-0.1.0-alpha.6-arm64.zip" length="1711665" type="application/octet-stream" sparkle:edSignature="5BYCzaDEAvuBBuiHOM1zJbSO7jxKSarCY4DsQstwkhczzD0Zf/FKIImSv6TATXPjpNiu3HMvXaeMo/TRSTysCA=="/>
+        </item>
         <item>
             <title>0.1.0</title>
             <pubDate>Thu, 22 Oct 2026 15:17:49 -0700</pubDate>
@@ -11,10 +23,11 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/ChaosDeSelva/Loki-Menubar/releases/download/v0.1.0-alpha.5/Loki-Menubar-0.1.0-alpha.5-arm64.zip" length="1599313" type="application/octet-stream" sparkle:edSignature="+EbbzI7exJcEHYNtRzsKB0mLUU3ju03HmRL7/Qa8y5odFqrxqkEkGAOSk5KSzJgKd61lwWv6svUCvofo7PwVAA=="></enclosure>
+            <enclosure url="https://github.com/ChaosDeSelva/Loki-Menubar/releases/download/v0.1.0-alpha.5/Loki-Menubar-0.1.0-alpha.5-arm64.zip" length="1599313" type="application/octet-stream" sparkle:edSignature="+EbbzI7exJcEHYNtRzsKB0mLUU3ju03HmRL7/Qa8y5odFqrxqkEkGAOSk5KSzJgKd61lwWv6svUCvofo7PwVAA=="/>
         </item>
     </channel>
-</rss><!-- sparkle-signatures:
-edSignature: cwZSkYgi0Xb0rSE8e/8xSHxDUVTzw8PgtfNWg42070bLpp96RPblo27GFepC5cLBLIfpnE1SfjTUXzFoMkH5Bg==
-length: 1220
+</rss>
+<!-- sparkle-signatures:
+edSignature: LiaoDVqUpIej0Qa6Mve8+5i5fX0w2boIVVtEsRqSB45Shgu7ylwTZfS9upfsDg153+mYWWRbOl+ARSwQ04KXAg==
+length: 1996
 -->
