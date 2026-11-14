@@ -14,7 +14,8 @@ the download page (`docs/index.html`, GitHub Pages) all live in that repo.
 - Confirmed on macOS 27.0.1 hardware: hiding a chosen app while everything else
   stays visible, and Reveal All bringing it back.
 - Confirmed on macOS 26.5.1, notched 14" MacBook Pro: the divider backend hides chosen
-  icons, un-hides them, and hover reveal re-hides after the delay.
+  icons, and hover reveal re-hides after the delay. Un-hiding is not confirmed: the one
+  icon tried was behind the notch and could not be moved (see below).
 - **Known gap on notched displays:** revealed icons are drawn left of the divider, so
   past the first few they land behind the notch. They can't be seen or dragged back
   from there. The likely fix is a panel under the menu bar that shows hidden icons.
