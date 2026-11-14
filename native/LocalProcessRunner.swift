@@ -32,8 +32,8 @@ final class LocalProcessRunner: @unchecked Sendable {
         posix_spawn_file_actions_adddup2(&actions, stdout.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
         posix_spawn_file_actions_adddup2(&actions, stderr.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
         for handle in handles { posix_spawn_file_actions_addclose(&actions, handle.fileDescriptor) }
-        if #available(macOS 26, *) { posix_spawn_file_actions_addchdir(&actions, directory.path) }
-        else { posix_spawn_file_actions_addchdir_np(&actions, directory.path) }
+        // The _np entry point also compiles against pre-macOS 26 SDKs.
+        posix_spawn_file_actions_addchdir_np(&actions, directory.path)
         // A separate process group makes Stop and timeouts also terminate shell children holding our pipes.
         posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT))
         posix_spawnattr_setpgroup(&attributes, 0)
