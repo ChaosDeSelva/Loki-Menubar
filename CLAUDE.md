@@ -13,9 +13,14 @@ the download page (`docs/index.html`, GitHub Pages) all live in that repo.
   (VisibilityController driven through a fake allowlist).
 - Confirmed on macOS 27.0.1 hardware: hiding a chosen app while everything else
   stays visible, and Reveal All bringing it back.
+- Confirmed on macOS 26.5.1, notched 14" MacBook Pro: the divider backend hides chosen
+  icons, un-hides them, and hover reveal re-hides after the delay.
+- **Known gap on notched displays:** revealed icons are drawn left of the divider, so
+  past the first few they land behind the notch. They can't be seen or dragged back
+  from there. The likely fix is a panel under the menu bar that shows hidden icons.
 - **Not yet verified on hardware:** on macOS 27, an app launched while icons are hidden,
-  Option-click reveal and the mic/camera pause; anything on macOS 14 to 26; multiple
-  displays, notched displays, sleep and wake. `ROADMAP.md` lists this work first.
+  Option-click reveal and the mic/camera pause; macOS 14 to 25; multiple displays, sleep
+  and wake. `ROADMAP.md` lists this work first.
 
 ## How hiding works (two backends)
 
@@ -40,12 +45,17 @@ the download page (`docs/index.html`, GitHub Pages) all live in that repo.
 - Ad-hoc rebuilds change the code signature and silently break the Accessibility
   grant. Fix it with `tccutil reset Accessibility io.github.ChaosDeSelva.Loki`, or
   test with a Developer ID build.
+- Divider backend, measured on macOS 26.5: a synthesized Command-drag settles about one
+  slot short of where it is released. Release well past the divider
+  (`MenuBarSections.dropOvershoot`). On a notched display, revealed positions are out of
+  order, so read which side an icon is on only while the divider is collapsed.
 - macOS 27 status-item clicks carry no modifier flags. Read `NSEvent.modifierFlags`
   instead.
 
 ## Releasing
 
-Follow `docs/RELEASING.md`. On this Mac, the signing identity, the notarytool
+Follow `docs/RELEASING.md`. On the release Mac, the signing identity, the notarytool
 keychain profile `loki-notary` (an App Store Connect API key) and the Sparkle EdDSA
-key (keychain account `Loki-Menubar`) are already set up. Bump `LOKI_BUILD_NUMBER`
+key (keychain account `Loki-Menubar`) are set up. Other Macs lack them, so their
+builds are ad-hoc signed. Bump `LOKI_BUILD_NUMBER`
 and `LOKI_RELEASE_LABEL` in `scripts/build.sh`. Never commit keys.
