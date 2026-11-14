@@ -17,3 +17,12 @@ swiftc -swift-version 5 -module-cache-path "$LOKI_ROOT/build/module-cache" \
   "$LOKI_ROOT/native/MenuLabel.swift" "$LOKI_ROOT/native/ShelfEngine.swift" "$LOKI_ROOT/native/MenuGeometry.swift" \
   "$LOKI_ROOT/tests/ControllerTests.swift" -o "$LOKI_ROOT/build/loki-controller-tests"
 "$LOKI_ROOT/build/loki-controller-tests"
+swiftc -swift-version 5 -module-cache-path "$LOKI_ROOT/build/module-cache" \
+  "$LOKI_ROOT/native/LauncherCore.swift" "$LOKI_ROOT/native/LocalProcessRunner.swift" "$LOKI_ROOT/native/QuickChat.swift" \
+  "$LOKI_ROOT/tests/LauncherTests.swift" -o "$LOKI_ROOT/build/loki-launcher-tests"
+"$LOKI_ROOT/build/loki-launcher-tests"
+swiftc -swift-version 5 -module-cache-path "$LOKI_ROOT/build/module-cache" -framework AppKit \
+  "$LOKI_ROOT/native/LauncherCore.swift" "$LOKI_ROOT/native/LocalProcessRunner.swift" "$LOKI_ROOT/native/QuickChat.swift" \
+  "$LOKI_ROOT/native/AddOnCore.swift" "$LOKI_ROOT/native/AddOnManager.swift" \
+  "$LOKI_ROOT/tests/AddOnTests.swift" -o "$LOKI_ROOT/build/loki-addon-tests"
+(cd "$LOKI_ROOT" && "$LOKI_ROOT/build/loki-addon-tests")

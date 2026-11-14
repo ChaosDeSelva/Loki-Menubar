@@ -42,6 +42,44 @@ enum ControllerTests {
     @MainActor
     static func run() {
         do {
+            var capturing = true
+            let (c, fake) = make(capture: { capturing })
+            c.apply([ollama])
+            check("Capture already active prevents the initial hide", fake.requests.isEmpty && c.privacyHold && c.paused)
+            capturing = false; c.checkCapture()
+            check("Initial capture hold resumes after capture ends", fake.requests.count == 1)
+            capturing = true; fake.requests[0].reply(nil)
+            check("Capture starting before confirmation cancels the pending hide", c.mode == .revealed && c.privacyHold && !c.allowlistPending && fake.reveals == 1)
+            capturing = false; c.checkCapture(); fake.requests[1].reply(nil)
+            capturing = true; c.refreshAllowlist()
+            check("Refresh cannot hide recording indicators", fake.requests.count == 2 && c.privacyHold && c.mode == .revealed)
+            c.restoreForQuit()
+        }
+        do {
+            var moves: [Set<String>] = []
+            var completions: [CheckedContinuation<MenuBarArranger.Outcome, Never>] = []
+            let c = VisibilityController(backend: .divider, allowlist: FakeAllowlist(), trusted: { true }, arrange: { hidden, _, _ in
+                moves.append(hidden)
+                return await withCheckedContinuation { completions.append($0) }
+            })
+            c.settings(delay: 30, autoRehide: false, hoverReveal: false)
+            c.apply([ollama]); drain(0.4)
+            c.apply(["menu-slot:com.apple.Safari:0"]); c.apply([]); c.revealAll()
+            completions[0].resume(returning: MenuBarArranger.Outcome()); drain(0.4)
+            check("Realm changes during a move coalesce to the latest selection", moves.count == 2 && moves[1].isEmpty && c.hidden.isEmpty)
+            completions[1].resume(returning: MenuBarArranger.Outcome()); drain()
+            check("Clearing a queued selection finishes with all icons visible", c.mode == .idle)
+            c.apply([ollama]); drain(0.4)
+            c.apply(["menu-slot:com.apple.Safari:0"]); c.revealAll()
+            completions[2].resume(returning: MenuBarArranger.Outcome()); drain(0.4)
+            completions[3].resume(returning: MenuBarArranger.Outcome()); drain()
+            check("Reveal All survives a queued realm change", c.mode == .revealed && c.paused)
+            c.apply([ollama]); drain(0.4); c.restoreForQuit()
+            completions[4].resume(returning: MenuBarArranger.Outcome()); drain()
+            c.apply([])
+            check("Quit prevents late arrangement results and new work", moves.count == 5 && c.mode == .arranging)
+        }
+        do {
             let (c, fake) = make()
             c.apply([ollama])
             check("Apply requests one hide and waits for macOS", fake.requests.count == 1 && c.mode == .revealed && c.allowlistPending)

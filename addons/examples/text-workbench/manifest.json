@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1, "id": "loki.text-workbench", "name": "Text Workbench", "version": "1.0.0", "author": "Loki",
+  "description": "A custom HTML interface using Loki's command bridge. Edit index.html and reload the add-on to make it your own.",
+  "icon": "rectangle.and.pencil.and.ellipsis",
+  "commands": [
+    {"id": "workbench", "title": "Open Text Workbench", "type": "view", "entrypoint": "index.html", "keywords": ["custom", "html", "text"]},
+    {"id": "transform", "title": "Workbench Transform", "type": "script", "runtime": "shell", "entrypoint": "transform.sh", "inputs": [
+      {"id": "text", "label": "Text", "type": "multiline", "required": true},
+      {"id": "mode", "label": "Transformation", "type": "choice", "options": ["UPPERCASE", "lowercase", "Count characters"], "value": "UPPERCASE"}
+    ]}
+  ]
+}

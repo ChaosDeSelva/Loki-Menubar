@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     private var dismissalMonitors: [Any] = []
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
+    private var launcherController: LauncherController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // One owner of the shortcut and status item; reopening an existing install is harmless.
@@ -50,6 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         popover.appearance = NSAppearance(named: .darkAqua)
         configureShelf(size: NSSize(width: 480, height: 620))
         installShortcut()
+        launcherController = LauncherController(model: model.launcher)
+        launcherController?.beforeOpen = { [weak self] in self?.closeShelf(); self?.mainWindow?.orderOut(nil) }
+        model.launcher.perform = { [weak self] action in self?.performLaunchAction(action) }
         commandObserver = DistributedNotificationCenter.default().addObserver(forName: Notification.Name("LokiCommand"), object: Bundle.main.bundleIdentifier, queue: .main) { [weak self] notification in
             MainActor.assumeIsolated {
             guard let self, let command = notification.userInfo?["command"] as? String else { return }
@@ -58,6 +62,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             case "--toggle-hidden": self.model.visibility.toggle()
             case "--shelf": self.toggleShelf()
             case "--settings": self.openSettings()
+            case "--launcher": self.openLauncher()
+            case "--quick-chat":
+                if self.model.launcher.settings.enabled { self.model.launcher.tab = "chat"; self.launcherController?.show() }
+                else { self.openLauncher() }
             case "--status":
                 guard let request = notification.userInfo?["request"] as? String else { return }
                 DistributedNotificationCenter.default().postNotificationName(Notification.Name("LokiStatus"), object: request,
@@ -65,6 +73,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
                                "hiddenCount": self.model.visibility.hidden.count, "mode": "\(self.model.visibility.mode)",
                                "backend": self.model.visibility.backend.rawValue, "paused": self.model.visibility.paused, "orderingValid": self.model.visibility.mode == .idle || self.model.visibility.orderingValid,
                                "message": self.model.visibility.failure ?? "", "shelfOpen": self.popover.isShown,
+                               "launcherEnabled": self.model.launcher.settings.enabled,
+                               "launcherOpen": self.launcherController?.isVisible ?? false,
+                               "launcherTab": self.model.launcher.tab,
+                               "selectedRealm": self.model.preferences.selectedRealm,
+                               "launcherShortcutRegistered": self.launcherController?.shortcutRegistered ?? false,
+                               "launcherShortcut": self.model.launcher.settings.shortcut.label,
+                               "launcherShortcutError": self.model.launcher.shortcutError ?? "",
                                "accessibility": MenuDiscovery.trusted], deliverImmediately: true)
             default: break
             }
@@ -82,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         menu.addItem(withTitle: "About Loki", action: #selector(showAbout), keyEquivalent: "")
         menu.addItem(withTitle: "Open Loki", action: #selector(openMain), keyEquivalent: "0")
         menu.addItem(withTitle: "Summon Shelf", action: #selector(summonShelf), keyEquivalent: "")
+        menu.addItem(withTitle: "Loki Launch…", action: #selector(openLauncher), keyEquivalent: "")
         menu.addItem(withTitle: "Show or Hide Hidden Icons", action: #selector(toggleHidden), keyEquivalent: "")
         menu.addItem(withTitle: "Reveal All Menu Bar Items", action: #selector(revealAll), keyEquivalent: "")
         if !model.policy.disableUpdates { menu.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "") }
@@ -111,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
             let menu = NSMenu()
             menu.addItem(withTitle: model.visibility.concealed ? "Show Hidden Icons" : "Hide Icons", action: #selector(toggleHidden), keyEquivalent: "")
             menu.addItem(withTitle: "Open Loki", action: #selector(openMain), keyEquivalent: "")
+            if model.launcher.settings.enabled { menu.addItem(withTitle: "Loki Launch…", action: #selector(openLauncher), keyEquivalent: "") }
             menu.addItem(withTitle: "Reveal All Menu Bar Items", action: #selector(revealAll), keyEquivalent: "")
             menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: "")
             menu.addItem(.separator())
@@ -124,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 
     func toggleShelf() {
         if popover.isShown { closeShelf(); return }
+        launcherController?.close()
         guard let button = statusItem.button, button.window != nil else { return }
         mainWindow?.orderOut(nil)
         let available = button.window?.screen?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
@@ -180,10 +198,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
         popover.contentSize = size
     }
 
-    func hideWindows() { closeShelf(); mainWindow?.orderOut(nil); NSApp.hide(nil) }
+    func hideWindows() { closeShelf(); launcherController?.close(); mainWindow?.orderOut(nil); NSApp.hide(nil) }
 
     func showMainWindow() {
         closeShelf()
+        launcherController?.close()
         if mainWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 710),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
@@ -208,6 +227,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     @objc private func revealAll() { model.visibility.revealAll() }
     @objc private func toggleHidden() { model.visibility.toggle() }
     @objc private func openSettings() { model.page = "settings"; showMainWindow() }
+    @objc private func openLauncher() {
+        if model.launcher.settings.enabled { launcherController?.toggle() }
+        else { model.page = "addons"; showMainWindow() }
+    }
+    private func performLaunchAction(_ action: LaunchEntry.Action) {
+        launcherController?.close()
+        switch action {
+        case .application(let url):
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, error in
+                guard let error else { return }
+                DispatchQueue.main.async {
+                    self?.launcherController?.show()
+                    self?.model.launcher.launchError = "Could not open \(url.deletingPathExtension().lastPathComponent): \(error.localizedDescription)"
+                }
+            }
+        case .shelf: toggleShelf()
+        case .settings: openSettings()
+        case .reveal: model.visibility.revealAll()
+        case .toggleHidden: model.visibility.toggle()
+        case .chat, .addon: break
+        }
+    }
     @objc private func checkUpdates() { model.updater.checkForUpdates() }
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Loki", .applicationVersion: lokiVersion, .credits: NSAttributedString(string: "A little order. A little mischief.\nA native, local menu utility for your Mac.")])
@@ -217,8 +258,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 
     private func installShortcut() {
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { (NSApp.delegate as? AppDelegate)?.toggleShelf() }
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var id = EventHotKeyID()
+            guard let event, GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                MemoryLayout<EventHotKeyID>.size, nil, &id) == noErr, id.signature == 0x4c4f4b49 else { return OSStatus(eventNotHandledErr) }
+            let command = id.id
+            DispatchQueue.main.async {
+                guard let delegate = NSApp.delegate as? AppDelegate else { return }
+                if command == 1 { delegate.toggleShelf() }
+                if command == 2 { delegate.launcherController?.toggle() }
+            }
             return noErr
         }, 1, &eventType, nil, &eventHandler)
         let id = EventHotKeyID(signature: 0x4c4f4b49, id: 1)
@@ -227,6 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
     }
     func applicationWillTerminate(_ notification: Notification) {
         model?.visibility.restoreForQuit()
+        launcherController?.shutdown()
         removeDismissalMonitors()
         if let hotKey { UnregisterEventHotKey(hotKey) }
         if let eventHandler { RemoveEventHandler(eventHandler) }
@@ -234,7 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
 }
 
 let app = NSApplication.shared
-let commands = ["--reveal-all", "--toggle-hidden", "--shelf", "--settings", "--status"]
+let commands = ["--reveal-all", "--toggle-hidden", "--shelf", "--settings", "--launcher", "--quick-chat", "--status"]
 /// One version source: the bundle's Info.plist, written by scripts/build.sh.
 /// Mirrors VisibilityController's backend choice without creating one.
 let lokiUsesAllowlist = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 && MenuBarVisibility.available

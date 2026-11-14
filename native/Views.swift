@@ -43,6 +43,7 @@ struct MainView: View {
                     nav("Menu bar", symbol: "menubar.rectangle", page: "menubar")
                     nav("Groups", symbol: "folder", page: "groups")
                     nav("Realms", symbol: "circle.hexagongrid", page: "realms")
+                    nav("Add-ons", symbol: "puzzlepiece.extension", page: "addons")
                     nav("Settings", symbol: "slider.horizontal.3", page: "settings")
                 }
                 VStack(alignment: .leading, spacing: 12) {
@@ -76,6 +77,14 @@ struct MainView: View {
                 case "groups": GroupsView(model: model).id(model.realm.id)
                 case "realms": RealmsView(model: model)
                 case "settings": SettingsView(model: model)
+                case "addons":
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 23) {
+                            Text("A little more Loki.").font(.system(size: 30, weight: .semibold, design: .rounded))
+                            LauncherSettingsView(model: model.launcher, accent: model.accent)
+                            AddOnSettingsView(manager: model.launcher.addons, accent: model.accent)
+                        }.padding(30)
+                    }
                 default: ShelfView(model: model, compact: false)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -329,6 +338,11 @@ struct PermissionCard: View {
                 .buttonStyle(AccentButton(color: model.accent))
             Button("Already allowed? Check again") { model.refresh() }
                 .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(LokiStyle.muted)
+            if model.launcher.settings.enabled {
+                Divider()
+                Text("App search, Quick Chat, and add-ons work without Accessibility.").font(.system(size: 11)).foregroundStyle(LokiStyle.muted)
+                Button("Open Loki Launch") { model.launcher.openPanel?() }.buttonStyle(AccentButton(color: model.accent))
+            }
         }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             .background(LokiStyle.surface, in: RoundedRectangle(cornerRadius: 16))
     }
@@ -355,7 +369,7 @@ struct RealmsView: View {
             ForEach(model.preferences.realms) { realm in
                 RealmCard(realm: realm, model: model)
             }
-            Text("These profiles arrange Loki’s shelf. They do not move or hide the system menu bar.")
+            Text("Each realm keeps its own shelf layout and hidden-icon choices. Switching realms applies those choices to the menu bar.")
                 .font(.system(size: 11)).foregroundStyle(LokiStyle.muted)
             Spacer()
         }.padding(30)
@@ -418,11 +432,14 @@ struct SettingsView: View {
                     }
                 }
                 UpdateSettingsView(updater: model.updater, policy: model.policy, accent: model.accent)
+                LauncherSettingsView(model: model.launcher, accent: model.accent)
                 settingsGroup("HONEST LITTLE UTILITY") {
                     Label("Local by design", systemImage: "lock.shield").font(.system(size: 13, weight: .medium)).foregroundStyle(model.accent)
                     Text("Loki stores your realms on this Mac. It has no analytics, cloud service, or screen capture. Menu discovery uses Accessibility only when you select Menu items.")
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    Text("Choose icons to hide in Menu bar. Loki moves them behind a divider using public macOS interfaces. Quitting Loki shows every icon again.")
+                    Text("Optional Quick Chat sends only the conversation you type to your chosen AI provider through its command-line client. Provider usage limits and data policies apply.")
+                        .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    Text(model.visibility.usesAllowlist ? "Choose apps to hide in Menu bar. On macOS 27, Loki uses an undocumented macOS interface. Quitting Loki shows every icon again." : "Choose icons to hide in Menu bar. Loki moves them behind a divider using public macOS interfaces. Quitting Loki shows every icon again.")
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                     Button("Open settings folder") { model.openSettingsFolder() }.buttonStyle(.plain).foregroundStyle(model.accent).font(.system(size: 12))
                 }

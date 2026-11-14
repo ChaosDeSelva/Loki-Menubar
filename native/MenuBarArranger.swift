@@ -25,10 +25,12 @@ enum MenuBarArranger {
         guard MenuDiscovery.trusted else { outcome.failed = Array(hidden); return outcome }
         let items = await Task.detached(priority: .userInitiated) { MenuDiscovery.scan().items }.value
             .filter { $0.kind == .menu && MenuBarSections.movable($0.id) && $0.element != nil }
+        guard !Task.isCancelled else { return outcome }
         let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         outcome.missing = hidden.filter { byID[$0] == nil }.sorted()
 
         func pending() async -> [MenuBarSections.Move]? {
+            guard !Task.isCancelled else { return nil }
             collapse(true)
             try? await Task.sleep(nanoseconds: settle)
             guard let line = divider() else { return nil }
@@ -47,6 +49,7 @@ enum MenuBarArranger {
             collapse(false)
             try? await Task.sleep(nanoseconds: settle)
             for move in remaining {
+                guard !Task.isCancelled else { return outcome }
                 guard let element = byID[move.id]?.element, let from = MenuDiscovery.frame(element),
                       let target = divider() else { continue }
                 await commandDrag(from: CGPoint(x: from.midX, y: from.midY),
@@ -85,16 +88,18 @@ enum MenuBarArranger {
         }
         post(.mouseMoved, from)
         try? await Task.sleep(nanoseconds: 40_000_000)
+        guard !Task.isCancelled else { return }
         post(.leftMouseDown, from)
+        defer { post(.leftMouseUp, to) }
         // The menu bar only starts a drag after a short hold.
         try? await Task.sleep(nanoseconds: 120_000_000)
         let steps = 14
         for step in 1...steps {
+            guard !Task.isCancelled else { return }
             let t = CGFloat(step) / CGFloat(steps)
             post(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
             try? await Task.sleep(nanoseconds: 12_000_000)
         }
         try? await Task.sleep(nanoseconds: 60_000_000)
-        post(.leftMouseUp, to)
     }
 }

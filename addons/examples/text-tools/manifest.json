@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "loki.text-tools",
+  "name": "Text Tools",
+  "version": "1.0.0",
+  "author": "Loki",
+  "description": "Clean up and transform text using native forms. No network or extra dependencies.",
+  "icon": "textformat",
+  "commands": [{
+    "id": "transform", "title": "Transform Text", "type": "script", "entrypoint": "transform.sh", "runtime": "shell",
+    "subtitle": "Choose a transformation and paste your text.", "keywords": ["uppercase", "lowercase", "text", "clean"],
+    "inputs": [
+      {"id": "text", "label": "Text", "type": "multiline", "required": true, "placeholder": "Paste your text…"},
+      {"id": "mode", "label": "Transformation", "type": "choice", "options": ["UPPERCASE", "lowercase", "Count characters"], "value": "UPPERCASE"}
+    ]
+  }]
+}

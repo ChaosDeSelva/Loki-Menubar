@@ -6,8 +6,8 @@ LOKI_APP="$LOKI_BUILD/Loki.app"
 # Single version source. package.sh and notarize.sh read these back from the
 # built Info.plist. Increment LOKI_BUILD_NUMBER for every published build.
 LOKI_MARKETING_VERSION="${LOKI_MARKETING_VERSION:-0.1.0}"
-LOKI_BUILD_NUMBER="${LOKI_BUILD_NUMBER:-8}"
-LOKI_RELEASE_LABEL="${LOKI_RELEASE_LABEL:-0.1.0-alpha.6}"
+LOKI_BUILD_NUMBER="${LOKI_BUILD_NUMBER:-12}"
+LOKI_RELEASE_LABEL="${LOKI_RELEASE_LABEL:-0.1.0-alpha.7}"
 [[ "$LOKI_MARKETING_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "Invalid LOKI_MARKETING_VERSION: $LOKI_MARKETING_VERSION" >&2; exit 1; }
 [[ "$LOKI_BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "Invalid LOKI_BUILD_NUMBER: $LOKI_BUILD_NUMBER" >&2; exit 1; }
 [[ "$LOKI_RELEASE_LABEL" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid LOKI_RELEASE_LABEL: $LOKI_RELEASE_LABEL" >&2; exit 1; }
@@ -22,7 +22,7 @@ swiftc -import-objc-header "$LOKI_ROOT/nativeBridge/include/LOKMenuBarBridge.h" 
   -module-cache-path "$LOKI_BUILD/module-cache" \
   -F "$LOKI_ROOT/build/vendor/Sparkle" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -framework AppKit -framework SwiftUI -framework ApplicationServices -framework Carbon -framework ServiceManagement \
-  -framework CoreAudio -framework CoreMediaIO \
+  -framework CoreAudio -framework CoreMediaIO -framework WebKit \
   "$LOKI_ROOT"/native/*.swift -o "$LOKI_APP/Contents/MacOS/Loki"
 cat > "$LOKI_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -72,6 +72,7 @@ for LOKI_NESTED in "$LOKI_FRAMEWORK"/XPCServices/*.xpc "$LOKI_FRAMEWORK"/Updater
 done
 codesign "${LOKI_SIGN_OPTIONS[@]}" "$LOKI_APP/Contents/Frameworks/Sparkle.framework"
 cp "$LOKI_ROOT/LICENSE" "$LOKI_APP/Contents/Resources/LICENSE.txt"
+ditto "$LOKI_ROOT/addons/examples" "$LOKI_APP/Contents/Resources/AddOnExamples"
 cp "$LOKI_ROOT/build/vendor/Sparkle/LICENSE" "$LOKI_APP/Contents/Resources/Sparkle-LICENSE.txt"
 codesign "${LOKI_SIGN_OPTIONS[@]}" "$LOKI_APP"
 codesign --verify --deep --strict "$LOKI_APP"

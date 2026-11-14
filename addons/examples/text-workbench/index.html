@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:">
+<title>Text Workbench</title>
+<style>
+:root{color-scheme:dark;font:13px system-ui;color:#eff2e0;background:#0e1311}*{box-sizing:border-box}body{margin:0;padding:18px 22px}h1{font-size:23px;letter-spacing:-.5px;margin:0 0 7px}p{color:#99a899;margin:0 0 16px}label{display:block;font-weight:600;margin:10px 0 6px}textarea{width:100%;min-height:80px;resize:vertical;font:13px system-ui;color:inherit;background:#1b211d;border:1px solid #3b483d;border-radius:9px;padding:12px}textarea:focus{outline:2px solid #c2e685;outline-offset:1px}.actions{display:flex;gap:9px;margin:12px 0}button,select{font:inherit;padding:8px 13px;border-radius:7px;border:1px solid #45503e}button{background:#c2e685;color:#182014;font-weight:600;cursor:pointer}button:disabled{opacity:.5}#error{color:#ffbc83;white-space:pre-wrap}#result{min-height:65px}
+</style></head>
+<body><h1>Text Workbench</h1><p>A custom interface. One local command. No app rebuild.</p>
+<label for="source">Your text</label><textarea id="source" placeholder="Paste a few words…"></textarea>
+<div class="actions"><select id="mode" aria-label="Transformation"><option>UPPERCASE</option><option>lowercase</option><option>Count characters</option></select><button id="run">Transform</button></div>
+<p id="error" role="alert"></p><label for="result">Result</label><textarea id="result" readonly placeholder="Your result appears here. Select it to copy."></textarea>
+<script>
+const run = document.querySelector('#run');
+run.addEventListener('click', async () => {
+  run.disabled = true; document.querySelector('#error').textContent = '';
+  try { const result = await window.loki.run('transform', {text: document.querySelector('#source').value, mode: document.querySelector('#mode').value}); document.querySelector('#result').value = result.text; }
+  catch (error) { document.querySelector('#error').textContent = error.message; }
+  finally { run.disabled = false; }
+});
+</script></body></html>

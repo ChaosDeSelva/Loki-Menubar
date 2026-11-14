@@ -37,6 +37,11 @@ final class VisibilityController: NSObject, ObservableObject {
     private let captureInUse: () -> Bool
     private let installed: () -> Bool
     private let confirmationTimeout: TimeInterval
+    private let trusted: () -> Bool
+    private let arrange: (Set<String>, @escaping () -> CGRect?, @escaping (Bool) -> Void) async -> MenuBarArranger.Outcome
+    private var arrangementTask: Task<Void, Never>?
+    private var queuedChoice: Set<String>?
+    private var stopped = false
     private var allowlistRequest = 0
     private var divider: NSStatusItem?
     private weak var anchor: NSStatusItem?
@@ -93,7 +98,8 @@ final class VisibilityController: NSObject, ObservableObject {
 
     /// Makes the hidden section match `hidden` exactly, then tucks it away.
     func apply(_ chosen: Set<String>) {
-        guard mode != .arranging else { return }
+        guard !stopped else { return }
+        if mode == .arranging { queuedChoice = chosen; revealRequested = false; return }
         let hidden = chosen.filter { MenuBarSections.hideable($0, allowlist: usesAllowlist) }
         self.hidden = hidden
         setFailure(nil)
@@ -109,13 +115,26 @@ final class VisibilityController: NSObject, ObservableObject {
             setMode(hidden.isEmpty ? .idle : .revealed)
             collapse()
         case .divider:
-            guard MenuDiscovery.trusted else { setFailure("Allow Accessibility so Loki can move icons for you."); return }
+            guard trusted() else { setFailure("Allow Accessibility so Loki can move icons for you."); return }
             setMode(.arranging)
-            Task { @MainActor in
+            arrangementTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                let outcome = await MenuBarArranger.arrange(hidden: hidden, divider: { [weak self] in self?.dividerFrame },
-                    collapse: { [weak self] in self?.divider?.length = MenuBarSections.dividerLength($0 ? .collapsed : .arranging) })
+                guard !Task.isCancelled, !stopped else { return }
+                let outcome = await arrange(hidden, { [weak self] in self?.dividerFrame },
+                    { [weak self] collapsed in
+                        guard let self, !self.stopped else { return }
+                        self.divider?.length = MenuBarSections.dividerLength(collapsed ? .collapsed : .arranging)
+                    })
+                guard !Task.isCancelled, !stopped else { return }
+                arrangementTask = nil
                 setMode(.revealed)
+                if let next = queuedChoice {
+                    queuedChoice = nil
+                    let keepVisible = revealRequested
+                    apply(next)
+                    if keepVisible { revealAll() }
+                    return
+                }
                 let waiting = outcome.missing.isEmpty ? "" : " · \(outcome.missing.count) not running"
                 summary = "\(hidden.count) chosen · \(outcome.moved) moved\(waiting)"
                 // An icon that should stay visible but could not leave the hidden side would vanish on collapse.
@@ -137,13 +156,14 @@ final class VisibilityController: NSObject, ObservableObject {
     }
 
     func collapse() {
+        guard !stopped else { return }
         guard mode == .revealed, !hidden.isEmpty, backend != .unavailable else {
             if mode == .revealed && hidden.isEmpty { setMode(.idle) }
             return
         }
         paused = false
         revealRequested = false
-        if privacyHold && captureInUse() { return }
+        if backend == .allowlist && captureInUse() { holdForCapture(true); return }
         privacyHold = false
         switch backend {
         case .divider:
@@ -186,6 +206,7 @@ final class VisibilityController: NSObject, ObservableObject {
         allowlist.hide(hidden) { [weak self] error in
             MainActor.assumeIsolated {
                 guard let self, self.allowlistRequest == request, self.allowlistPending else { return }
+                if self.captureInUse() { self.holdForCapture(true); return }
                 self.allowlistPending = false
                 if let error {
                     if self.mode == .collapsed { self.setMode(.revealed) }
@@ -213,7 +234,8 @@ final class VisibilityController: NSObject, ObservableObject {
     func checkCapture() { holdForCapture(captureInUse()) }
 
     private func holdForCapture(_ inUse: Bool) {
-        if inUse && mode == .collapsed {
+        guard backend == .allowlist, !stopped else { return }
+        if inUse && (mode == .collapsed || allowlistPending || (mode == .revealed && !hidden.isEmpty)) {
             setMode(.revealed)
             privacyHold = true
             pause()
@@ -325,12 +347,18 @@ final class VisibilityController: NSObject, ObservableObject {
     init(backend: Backend = VisibilityController.systemBackend, allowlist: MenuBarAllowlist = MenuBarVisibility(),
          captureInUse: @escaping () -> Bool = { CaptureActivity.inUse },
          installed: @escaping () -> Bool = { VisibilityController.installedInApplications },
-         confirmationTimeout: TimeInterval = 5) {
+         confirmationTimeout: TimeInterval = 5,
+         trusted: @escaping () -> Bool = { MenuDiscovery.trusted },
+         arrange: @escaping (Set<String>, @escaping () -> CGRect?, @escaping (Bool) -> Void) async -> MenuBarArranger.Outcome = { hidden, divider, collapse in
+             await MenuBarArranger.arrange(hidden: hidden, divider: divider, collapse: collapse)
+         }) {
         self.backend = backend
         self.allowlist = allowlist
         self.captureInUse = captureInUse
         self.installed = installed
         self.confirmationTimeout = confirmationTimeout
+        self.trusted = trusted
+        self.arrange = arrange
         super.init()
         // A new display arrangement can strand the divider: hold everything visible while it
         // settles, then hide again only if the layout is still sound.
@@ -363,12 +391,16 @@ final class VisibilityController: NSObject, ObservableObject {
 
     /// Re-issues a live or pending hide so apps launched since then are allowed.
     func refreshAllowlist() {
-        guard backend == .allowlist, mode == .collapsed || allowlistPending else { return }
+        guard !stopped, backend == .allowlist, mode == .collapsed || allowlistPending else { return }
+        if captureInUse() { holdForCapture(true); return }
         hideWithAllowlist()
     }
 
     /// Called from applicationWillTerminate; macOS also drops both mechanisms when the process exits.
     func restoreForQuit() {
+        stopped = true
+        queuedChoice = nil
+        arrangementTask?.cancel(); arrangementTask = nil
         timer?.invalidate(); timer = nil
         refreshWork?.cancel()
         cancelAllowlist()

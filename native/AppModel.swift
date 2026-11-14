@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
     @Published var shortcutRegistered = false
     let visibility = VisibilityController()
+    let launcher = LauncherModel()
     @Published private var deletedGroup: (realmID: String, name: String, members: [String])?
     var canUndoGroupDeletion: Bool {
         guard let deletedGroup, deletedGroup.realmID == realm.id else { return false }
@@ -36,6 +37,7 @@ final class AppModel: ObservableObject {
     private let scanQueue = DispatchQueue(label: "Loki.discovery", qos: .userInitiated)
     private var observers: [NSObjectProtocol] = []
     private var refreshWork: DispatchWorkItem?
+    private var extrasScanning = false
 
     init(store: PreferenceStore = PreferenceStore()) {
         self.store = store
@@ -152,9 +154,15 @@ final class AppModel: ObservableObject {
     }
     func refreshExtras() {
         guard MenuDiscovery.trusted else { menuExtras = []; return }
+        guard !extrasScanning else { return }
+        extrasScanning = true
         scanQueue.async { [weak self] in
             let result = MenuDiscovery.scan()
-            DispatchQueue.main.async { self?.menuExtras = result.items }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.extrasScanning = false
+                self.menuExtras = MenuDiscovery.trusted ? result.items : []
+            }
         }
     }
     func pin(_ id: String) {
@@ -184,18 +192,18 @@ final class AppModel: ObservableObject {
     }
     func refresh() {
         accessibility = MenuDiscovery.trusted
-        guard !scanning else { return }
         if preferences.source == "apps" {
             items = MenuDiscovery.appShortcuts(); lastScan = Date(); scanSummary = "\(items.count) running apps"; return
         }
         guard accessibility else { items = []; scanSummary = "Accessibility permission needed"; return }
+        guard !scanning else { return }
         scanning = true
         scanQueue.async { [weak self] in
             let result = MenuDiscovery.scan()
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.scanning = false
-                guard self.preferences.source == "menu" else { self.refresh(); return }
+                guard self.preferences.source == "menu", MenuDiscovery.trusted else { self.refresh(); return }
                 if self.preferences.migrateItemAliases(result.legacyAliases) { self.save() }
                 self.items = result.items
                 self.menuExtras = result.items
