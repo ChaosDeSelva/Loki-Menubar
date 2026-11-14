@@ -65,7 +65,7 @@ for `codesign --verify`).
 1. Pick the version. In `scripts/build.sh`, increment `LOKI_BUILD_NUMBER`
    (`CFBundleVersion`, must grow for every published build, Sparkle compares
    it) and set `LOKI_RELEASE_LABEL` (artifact names and the GitHub tag, for
-   example `0.1.0-alpha.6`). `LOKI_MARKETING_VERSION` is
+   example `0.1.0-alpha.7`). `LOKI_MARKETING_VERSION` is
    `CFBundleShortVersionString`. All three can also be overridden from the
    environment. `package.sh` and `notarize.sh` read the label back from the
    built app's `LokiReleaseLabel` key.
@@ -94,7 +94,7 @@ for `codesign --verify`).
 Use the ZIP for Sparkle; the DMG is for manual installs.
 
 ```sh
-LABEL=0.1.0-alpha.6
+LABEL=0.1.0-alpha.7
 mkdir -p build/feed
 cp "build/release/Loki-Menubar-$LABEL-arm64.zip" build/feed/
 cp docs/appcast.xml build/feed/appcast.xml

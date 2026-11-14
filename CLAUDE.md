@@ -6,7 +6,7 @@ the download page (`docs/index.html`, GitHub Pages) all live in that repo.
 
 ## Where things stand (November 2026)
 
-- Latest release: **v0.1.0-alpha.6** (build 8), a notarized pre-release with DMG, ZIP
+- Latest release: **v0.1.0-alpha.7** (build 12), a notarized pre-release with DMG, ZIP
   and SHA256SUMS. The appcast offers it and its ZIP signature verifies. CI is green.
 - Tests: `bash scripts/test.sh` runs three suites: `tests/TestMain.swift` (pure logic),
   `tests/VisibilityBridgeTests.m` (Objective-C bridge) and `tests/ControllerTests.swift`
