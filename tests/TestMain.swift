@@ -87,6 +87,8 @@ enum Tests {
         check("System identifier resolves unnamed battery", MenuLabel.resolve(identifier: "com.apple.controlcenter.Battery", title: "", description: "Control Center", help: "", owner: "Control Center", system: true) == "Battery")
         check("Unknown system proxies are omitted", MenuLabel.resolve(identifier: "proxy-3", title: "", description: "", help: "", owner: "MenuBarAgent", system: true) == nil)
         check("Third party owner fallback retained", MenuLabel.resolve(identifier: "", title: "", description: "", help: "", owner: "Example", system: false) == "Example")
+        check("Symbol-only title falls back to the owner", MenuLabel.resolve(identifier: "", title: "●", description: "", help: "", owner: "Feedback Graph", system: false) == "Feedback Graph")
+        check("Symbol-only title yields to a real description", MenuLabel.resolve(identifier: "", title: "●", description: "Status", help: "", owner: "Example", system: false) == "Status")
         check("System identity survives host fallback", MenuLabel.systemID(identifier: "com.apple.controlcenter.WiFi", title: "Wi-Fi") == MenuLabel.systemID(identifier: "", title: "Wi-Fi"))
         var migration = Preferences()
         migration.realms[0].pins = ["menu:com.apple.controlcenter:com.apple.controlcenter.WiFi", "menu:system:wifi"]
@@ -129,8 +131,20 @@ enum Tests {
         check("Empty choice reveals everything", S.moves(items: placements, dividerMidX: 1000, hidden: []).allSatisfy { !$0.toHidden })
         check("Settled layout needs no moves", S.moves(items: [S.Placement(id: "a", midX: 900)], dividerMidX: 1000, hidden: ["a"]).isEmpty)
         let line = CGRect(x: 1000, y: 0, width: 16, height: 24)
-        check("Hidden drop lands on divider's left edge", S.dropPoint(divider: line, toHidden: true).x < line.midX && S.dropPoint(divider: line, toHidden: true).x >= line.minX)
-        check("Visible drop lands on divider's right edge", S.dropPoint(divider: line, toHidden: false).x > line.midX && S.dropPoint(divider: line, toHidden: false).x <= line.maxX)
+        // Measured on macOS 26.5: a Command-drag released on or just past the divider lands one slot short.
+        check("Hidden drop overshoots the divider's left edge", S.dropPoint(divider: line, toHidden: true, attempt: 0).x <= line.minX - S.dropOvershoot)
+        check("Visible drop overshoots the divider's right edge", S.dropPoint(divider: line, toHidden: false, attempt: 0).x >= line.maxX + S.dropOvershoot)
+        check("Retries reach further", S.dropPoint(divider: line, toHidden: true, attempt: 1).x < S.dropPoint(divider: line, toHidden: true, attempt: 0).x
+              && S.dropPoint(divider: line, toHidden: false, attempt: 1).x > S.dropPoint(divider: line, toHidden: false, attempt: 0).x)
+        // Collapsed: the divider runs from -3923 to 1079 and pushes hidden icons further left still.
+        let wide = CGRect(x: -3923, y: 4, width: 5002, height: 24), display = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        check("Collapsed bar keeps icons pushed past the divider's left edge", S.onCollapsedBar(CGRect(x: -4183, y: 4, width: 33, height: 24), divider: wide, display: display))
+        check("Collapsed bar keeps visible icons", S.onCollapsedBar(CGRect(x: 1085, y: 4, width: 36, height: 24), divider: wide, display: display))
+        check("Collapsed bar refuses other rows and other displays", !S.onCollapsedBar(CGRect(x: 1085, y: 300, width: 36, height: 24), divider: wide, display: display)
+              && !S.onCollapsedBar(CGRect(x: 1600, y: 4, width: 36, height: 24), divider: wide, display: display))
+        check("Pushed-past icons read as hidden", S.moves(items: [S.Placement(id: "a", midX: -4166)], dividerMidX: wide.midX, hidden: ["a"]).isEmpty
+              && S.moves(items: [S.Placement(id: "a", midX: -4166)], dividerMidX: wide.midX, hidden: []) == [S.Move(id: "a", toHidden: false)])
+        check("Drop stays on the divider's row", S.dropPoint(divider: line, toHidden: true, attempt: 0).y == line.midY)
         check("Pinned system icons are not offered", !S.movable("menu:system:clock") && !S.movable("menu:system:controlcenter") && S.movable("menu:system:wifi"))
         check("Rehide waits for idle delay", !S.shouldRehide(pointerInBar: false, menuOpen: false, mouseDown: false, commandHeld: false, idle: 2, delay: 3))
         check("Rehide after idle delay", S.shouldRehide(pointerInBar: false, menuOpen: false, mouseDown: false, commandHeld: false, idle: 3, delay: 3))

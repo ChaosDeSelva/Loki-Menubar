@@ -45,10 +45,21 @@ enum MenuBarSections {
         }
     }
 
-    /// A Command-drag dropped on the divider's left edge lands to its left; the right edge, to its right.
-    static func dropPoint(divider: CGRect, toHidden: Bool) -> CGPoint {
-        let inset = min(3, divider.width / 4)
-        return CGPoint(x: toHidden ? divider.minX + inset : divider.maxX - inset, y: divider.midY)
+    /// How far past the divider a drag is released. Measured on macOS 26.5: the menu bar settles
+    /// a Command-drag about one slot short of the pointer, so a release on the divider's edge never crosses it.
+    static let dropOvershoot: CGFloat = 40
+
+    /// Each retry reaches one more overshoot further; landing deeper inside the chosen side is harmless.
+    static func dropPoint(divider: CGRect, toHidden: Bool, attempt: Int) -> CGPoint {
+        let reach = dropOvershoot * CGFloat(attempt + 1)
+        return CGPoint(x: toHidden ? divider.minX - reach : divider.maxX + reach, y: divider.midY)
+    }
+
+    /// Whether an icon read while collapsed belongs to the divider's bar. Hidden icons sit beyond the
+    /// divider's left edge, so the band reaches one display width further left than the divider starts.
+    /// `display` is the top-left-origin frame of the display whose menu bar holds the divider.
+    static func onCollapsedBar(_ item: CGRect, divider: CGRect, display: CGRect) -> Bool {
+        abs(item.midY - divider.midY) < 12 && divider.minX - display.width <= item.midX && item.midX <= display.maxX
     }
 
     /// macOS pins these in place; offering them would only produce a failed drag.

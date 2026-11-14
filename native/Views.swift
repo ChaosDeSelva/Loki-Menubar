@@ -639,6 +639,8 @@ struct MenuBarView: View {
                 .foregroundStyle(running ? LokiStyle.text : LokiStyle.muted)
             Text(caption).font(.caption).foregroundStyle(LokiStyle.muted).lineLimit(2)
         }
+        // Fill the row so the label sits leading and every switch lines up on the trailing edge.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var rowDivider: some View { Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1) }

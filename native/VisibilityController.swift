@@ -113,14 +113,15 @@ final class VisibilityController: NSObject, ObservableObject {
             setMode(.arranging)
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                let outcome = await MenuBarArranger.arrange(hidden: hidden, divider: { [weak self] in self?.dividerFrame })
+                let outcome = await MenuBarArranger.arrange(hidden: hidden, divider: { [weak self] in self?.dividerFrame },
+                    collapse: { [weak self] in self?.divider?.length = MenuBarSections.dividerLength($0 ? .collapsed : .arranging) })
                 setMode(.revealed)
                 let waiting = outcome.missing.isEmpty ? "" : " · \(outcome.missing.count) not running"
                 summary = "\(hidden.count) chosen · \(outcome.moved) moved\(waiting)"
                 // An icon that should stay visible but could not leave the hidden side would vanish on collapse.
                 let stranded = outcome.failed.filter { !hidden.contains($0) }
                 if !outcome.failed.isEmpty {
-                    setFailure("\(outcome.failed.count) icon\(outcome.failed.count == 1 ? "" : "s") could not be moved. That app may not allow it; try Command-dragging it yourself.")
+                    setFailure("Couldn’t move \(ListFormatter.localizedString(byJoining: outcome.failedTitles)). That app may not allow it; try Command-dragging it yourself.")
                 }
                 if hidden.isEmpty { setMode(.idle) }
                 else if revealRequested || !stranded.isEmpty { pause() }

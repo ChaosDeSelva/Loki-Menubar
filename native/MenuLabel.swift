@@ -5,7 +5,8 @@ enum MenuLabel {
     static func resolve(identifier: String, title: String, description: String, help: String, owner: String, system: Bool) -> String? {
         let generic = ["control center", "control centre", "menubaragent", "menu bar", "menu extra", "status item"]
         let candidates = [title, description, help].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let specific = candidates.first(where: { !$0.isEmpty && !generic.contains($0.lowercased()) })
+        // A status dot such as "●" is not a name; fall through to the next candidate or the owner.
+        let specific = candidates.first(where: { $0.contains(where: { $0.isLetter || $0.isNumber }) && !generic.contains($0.lowercased()) })
         guard system else { return specific.map { String($0.prefix(100)) } ?? owner }
         let token = identifier.lowercased().filter { $0.isLetter || $0.isNumber }
         let labels: [(String, String)] = [
