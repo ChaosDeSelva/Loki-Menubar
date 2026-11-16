@@ -39,6 +39,12 @@ final class VisibilityController: NSObject, ObservableObject {
     private let confirmationTimeout: TimeInterval
     private let trusted: () -> Bool
     private let arrange: (Set<String>, @escaping () -> CGRect?, @escaping (Bool) -> Void) async -> MenuBarArranger.Outcome
+    private let unexpectedHiddenItems: (Set<String>, @escaping () -> CGRect?) async -> Bool
+    private let interactionActive: @MainActor () -> Bool
+    private let validOrdering: (() -> Bool)?
+    private var reconciliationTask: Task<Void, Never>?
+    private var layoutRevision = 0
+    private var dividerCheck = 0
     private var arrangementTask: Task<Void, Never>?
     private var queuedChoice: Set<String>?
     private var stopped = false
@@ -78,15 +84,16 @@ final class VisibilityController: NSObject, ObservableObject {
         }
         settings(delay: delay, autoRehide: autoRehide, hoverReveal: hoverReveal)
         guard backend != .unavailable, !self.hidden.isEmpty else { return }
-        // The previous session's choices still apply; tuck them away once the bar settles.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            guard let self, self.mode == .idle, !self.hidden.isEmpty else { return }
-            self.setMode(.revealed)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                guard self.mode == .revealed, !self.revealRequested else { return }
-                self.collapse()
-            }
+            guard let self else { return }
+            self.restoreSavedSelection(self.hidden)
         }
+    }
+
+    func restoreSavedSelection(_ chosen: Set<String>) {
+        guard !stopped, mode == .idle, !chosen.isEmpty, !revealRequested else { return }
+        // Icons may have launched while Loki was closed; saved positions are not saved choices.
+        apply(chosen)
     }
 
     func settings(delay: TimeInterval, autoRehide: Bool, hoverReveal: Bool) {
@@ -192,6 +199,7 @@ final class VisibilityController: NSObject, ObservableObject {
     }
 
     var orderingValid: Bool {
+        if let validOrdering { return validOrdering() }
         guard let divider = Self.frame(of: divider), let anchor = Self.frame(of: anchor) else { return false }
         return MenuBarSections.orderingValid(divider: divider, anchor: anchor)
     }
@@ -259,6 +267,7 @@ final class VisibilityController: NSObject, ObservableObject {
     }
 
     private func setMode(_ new: MenuBarSections.Mode) {
+        layoutRevision += 1
         if backend == .allowlist && new != .collapsed && (mode == .collapsed || allowlistPending) {
             cancelAllowlist()
         }
@@ -272,9 +281,10 @@ final class VisibilityController: NSObject, ObservableObject {
         updateTimer()
     }
 
-    /// Runs only while it has something to watch: a revealed section to rehide, or hover to detect.
+    /// Collapsed dividers also need polling: apps can add icons without a workspace launch event.
     private func updateTimer() {
         let needed = (mode == .revealed && autoRehide && !paused) || (mode == .collapsed && hoverReveal)
+            || (backend == .divider && mode == .collapsed)
             || (backend == .allowlist && (mode == .collapsed || privacyHold))
         if needed, timer == nil {
             let timer = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tick() } }
@@ -286,6 +296,10 @@ final class VisibilityController: NSObject, ObservableObject {
     }
 
     private func tick() {
+        if backend == .divider && mode == .collapsed {
+            dividerCheck += 1
+            if dividerCheck % 5 == 0 { refreshDivider() }
+        }
         if backend == .allowlist && (mode == .collapsed || privacyHold) {
             captureCheck += 1
             if captureCheck % 3 == 0 { checkCapture() }
@@ -349,6 +363,14 @@ final class VisibilityController: NSObject, ObservableObject {
          installed: @escaping () -> Bool = { VisibilityController.installedInApplications },
          confirmationTimeout: TimeInterval = 5,
          trusted: @escaping () -> Bool = { MenuDiscovery.trusted },
+         validOrdering: (() -> Bool)? = nil,
+         interactionActive: @escaping @MainActor () -> Bool = {
+             VisibilityController.pointerInMenuBar || VisibilityController.menuIsOpen ||
+                 NSEvent.pressedMouseButtons != 0 || NSEvent.modifierFlags.contains(.command)
+         },
+         unexpectedHiddenItems: @escaping (Set<String>, @escaping () -> CGRect?) async -> Bool = { hidden, divider in
+             await MenuBarArranger.hasUnexpectedHiddenItems(hidden: hidden, divider: divider)
+         },
          arrange: @escaping (Set<String>, @escaping () -> CGRect?, @escaping (Bool) -> Void) async -> MenuBarArranger.Outcome = { hidden, divider, collapse in
              await MenuBarArranger.arrange(hidden: hidden, divider: divider, collapse: collapse)
          }) {
@@ -359,6 +381,9 @@ final class VisibilityController: NSObject, ObservableObject {
         self.confirmationTimeout = confirmationTimeout
         self.trusted = trusted
         self.arrange = arrange
+        self.validOrdering = validOrdering
+        self.interactionActive = interactionActive
+        self.unexpectedHiddenItems = unexpectedHiddenItems
         super.init()
         // A new display arrangement can strand the divider: hold everything visible while it
         // settles, then hide again only if the layout is still sound.
@@ -373,19 +398,35 @@ final class VisibilityController: NSObject, ObservableObject {
                 }
             }
         })
-        // The allowlist names running apps. A newly launched app must stay visible, so refresh
-        // the allowlist instead of revealing everything.
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
             notifications.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard let self, self.backend == .allowlist else { return }
+                    guard let self else { return }
                     // Coalesce bursts, such as login, into one refresh.
                     self.refreshWork?.cancel()
-                    let work = DispatchWorkItem { [weak self] in self?.refreshAllowlist() }
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self else { return }
+                        if self.backend == .divider { self.refreshDivider() }
+                        else { self.refreshAllowlist() }
+                    }
                     self.refreshWork = work
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
                 }
             })
+        }
+    }
+
+    func refreshDivider() {
+        guard !stopped, backend == .divider, mode == .collapsed, !paused,
+              reconciliationTask == nil, trusted(), !interactionActive() else { return }
+        let revision = layoutRevision
+        let choice = hidden
+        reconciliationTask = Task { @MainActor in
+            let misplaced = await unexpectedHiddenItems(choice, { [weak self] in self?.dividerFrame })
+            reconciliationTask = nil
+            guard !Task.isCancelled, !stopped, layoutRevision == revision else { return }
+            guard misplaced, !interactionActive() else { return }
+            apply(choice)
         }
     }
 
@@ -399,6 +440,7 @@ final class VisibilityController: NSObject, ObservableObject {
     /// Called from applicationWillTerminate; macOS also drops both mechanisms when the process exits.
     func restoreForQuit() {
         stopped = true
+        reconciliationTask?.cancel(); reconciliationTask = nil
         queuedChoice = nil
         arrangementTask?.cancel(); arrangementTask = nil
         timer?.invalidate(); timer = nil

@@ -42,6 +42,96 @@ enum ControllerTests {
     @MainActor
     static func run() {
         do {
+            var moves: [Set<String>] = []
+            let c = VisibilityController(backend: .divider, allowlist: FakeAllowlist(), trusted: { true },
+                validOrdering: { true }, interactionActive: { false },
+                unexpectedHiddenItems: { _, _ in false },
+                arrange: { hidden, _, _ in moves.append(hidden); return MenuBarArranger.Outcome() })
+            c.settings(delay: 30, autoRehide: false, hoverReveal: false)
+            c.restoreSavedSelection([ollama]); drain(0.4)
+            check("Startup reconciles saved choices instead of blindly collapsing old positions", moves == [[ollama]] && c.mode == .collapsed)
+            c.restoreForQuit(); c.restoreSavedSelection([ollama]); drain(0.4)
+            check("A delayed startup cannot restore hiding after quit", moves.count == 1)
+        }
+        do {
+            let fresh = "menu-slot:org.example.new-app:0"
+            var positions = [MenuBarSections.Placement(id: ollama, midX: -100)]
+            var moves: [Set<String>] = []
+            var interacting = false
+            var scans = 0
+            let c = VisibilityController(backend: .divider, allowlist: FakeAllowlist(), trusted: { true },
+                validOrdering: { true }, interactionActive: { interacting },
+                unexpectedHiddenItems: { hidden, _ in
+                    scans += 1
+                    return MenuBarSections.moves(items: positions, dividerMidX: 0, hidden: hidden).contains { !$0.toHidden }
+                }, arrange: { hidden, _, _ in
+                    moves.append(hidden)
+                    positions = positions.map { .init(id: $0.id, midX: hidden.contains($0.id) ? -100 : 100) }
+                    return MenuBarArranger.Outcome()
+                })
+            c.settings(delay: 30, autoRehide: false, hoverReveal: false)
+            c.apply([ollama]); drain(0.4)
+            positions.append(.init(id: fresh, midX: -50))
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didLaunchApplicationNotification, object: nil)
+            drain(1.0)
+            check("A newly launched unchecked icon moves out of the hidden section", positions.first { $0.id == fresh }?.midX == 100 && moves.count == 2)
+            check("Launch repair preserves the user's hidden choices", c.hidden == [ollama] && moves.last == [ollama] && c.mode == .collapsed)
+            c.refreshDivider(); drain(0.4)
+            check("A matching layout does not trigger redundant drags", moves.count == 2)
+            positions.append(.init(id: "menu-slot:org.example.delayed:0", midX: -50))
+            drain(3)
+            check("An icon added later without a launch event is repaired with hover disabled", positions.last?.midX == 100 && moves.count == 3)
+            interacting = true
+            positions.append(.init(id: "menu-slot:org.example.busy:0", midX: -50))
+            let before = scans
+            c.refreshDivider(); drain(0.4)
+            check("Automatic repair waits while the person uses the menu bar", scans == before && moves.count == 3)
+            interacting = false
+            c.refreshDivider(); drain(0.4)
+            check("Deferred repair resumes without toggling a checkbox", positions.last?.midX == 100 && moves.count == 4)
+            c.revealAll(); c.refreshDivider(); drain(0.4)
+            check("Reveal All suppresses automatic repair", moves.count == 4 && c.paused)
+            c.restoreForQuit()
+        }
+        do {
+            var completions: [CheckedContinuation<Bool, Never>] = []
+            var moves = 0
+            let c = VisibilityController(backend: .divider, allowlist: FakeAllowlist(), trusted: { true },
+                validOrdering: { true }, interactionActive: { false },
+                unexpectedHiddenItems: { _, _ in await withCheckedContinuation { completions.append($0) } },
+                arrange: { _, _, _ in moves += 1; return MenuBarArranger.Outcome() })
+            c.settings(delay: 30, autoRehide: false, hoverReveal: false)
+            c.apply([ollama]); drain(0.4)
+            c.refreshDivider(); drain(); c.refreshDivider(); drain()
+            check("Only one automatic discovery runs at a time", completions.count == 1)
+            c.revealAll(); completions[0].resume(returning: true); drain(0.4)
+            check("A late discovery cannot override Reveal All", moves == 1 && c.mode == .revealed && c.paused)
+            c.collapse(); c.refreshDivider(); drain()
+            c.apply([]); drain(0.4)
+            completions[1].resume(returning: true); drain(0.4)
+            check("A stale discovery cannot restore an old hidden selection", moves == 2 && c.hidden.isEmpty && c.mode == .idle)
+            c.apply([ollama]); drain(0.4); c.refreshDivider(); drain()
+            c.restoreForQuit(); completions[2].resume(returning: true); drain(0.4)
+            check("Quit prevents a pending discovery from moving icons", moves == 3)
+        }
+        do {
+            var moves = 0
+            let fresh = "menu-slot:org.example.refuses-drag:0"
+            let c = VisibilityController(backend: .divider, allowlist: FakeAllowlist(), trusted: { true },
+                validOrdering: { true }, interactionActive: { false },
+                unexpectedHiddenItems: { _, _ in true }, arrange: { _, _, _ in
+                    moves += 1
+                    return moves == 1 ? MenuBarArranger.Outcome() :
+                        MenuBarArranger.Outcome(failed: [fresh], failedTitles: ["New App"])
+                })
+            c.settings(delay: 30, autoRehide: false, hoverReveal: false)
+            c.apply([ollama]); drain(0.4); c.refreshDivider(); drain(0.4)
+            check("A new icon that refuses to move leaves the divider revealed with a named error", c.mode == .revealed && c.paused && c.failure?.contains("New App") == true)
+            c.refreshDivider(); drain(0.4)
+            check("Failed automatic repair does not loop or silently mark the icon hidden", moves == 2 && c.hidden == [ollama])
+            c.restoreForQuit()
+        }
+        do {
             var capturing = true
             let (c, fake) = make(capture: { capturing })
             c.apply([ollama])

@@ -66,6 +66,21 @@ enum MenuBarArranger {
         return outcome
     }
 
+    /// Read only while collapsed; revealed positions near a notch cannot establish which side owns an icon.
+    static func hasUnexpectedHiddenItems(hidden: Set<String>, divider: () -> CGRect?) async -> Bool {
+        let placements = await Task.detached(priority: .utility) {
+            MenuDiscovery.scan().items.compactMap { item -> (String, CGRect)? in
+                guard item.kind == .menu, MenuBarSections.movable(item.id),
+                      let frame = item.element.flatMap(MenuDiscovery.frame) else { return nil }
+                return (item.id, frame)
+            }
+        }.value
+        guard !Task.isCancelled, let line = divider() else { return false }
+        let items = placements.filter { collapsedBar($0.1, line) }
+            .map { MenuBarSections.Placement(id: $0.0, midX: $0.1.midX) }
+        return MenuBarSections.moves(items: items, dividerMidX: line.midX, hidden: hidden).contains { !$0.toHidden }
+    }
+
     private static let settle: UInt64 = 400_000_000
 
     /// The display whose menu bar holds the divider's visible right end.
