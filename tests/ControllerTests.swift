@@ -42,6 +42,42 @@ enum ControllerTests {
     @MainActor
     static func run() {
         do {
+            let sourceWindow = MenuGeometry.StatusWindow(id: 41, pid: 100, frame: CGRect(x: -9000, y: 0, width: 38, height: 33))
+            let divider = MenuGeometry.StatusWindow(id: 42, pid: 100, frame: CGRect(x: 1010, y: 0, width: 32, height: 33))
+            let start = CGPoint(x: -8981, y: 16.5), end = CGPoint(x: 1082, y: 16.5)
+            var sent: [(CGEvent, pid_t)] = []
+            var completed: Bool?
+            Task { @MainActor in
+                completed = await MenuBarArranger.commandDrag(from: start, to: end, window: sourceWindow,
+                    destination: divider, deliver: { sent.append(($0, $1)) }, wait: { _ in })
+            }
+            drain()
+            check("Offscreen drags dispatch to the window host without a coordinate fallback", completed == true && sent.map { $0.1 } == [100, 100, 100])
+            check("The drag sends no mouse-move stream", sent.map { $0.0.type } == [.leftMouseDown, .leftMouseDragged, .leftMouseUp])
+            check("AppKit sees the source window on press and the divider on release", sent.compactMap { NSEvent(cgEvent: $0.0)?.windowNumber } == [41, 41, 42])
+            check("Only the press carries Command; release ends the drag", sent.map { $0.0.flags.contains(.maskCommand) } == [true, false, false])
+            check("Offscreen source and intended destination coordinates survive event construction", sent.first?.0.location == start && sent.last?.0.location == end)
+            sent.removeAll(); completed = nil
+            Task { @MainActor in
+                completed = await MenuBarArranger.commandDrag(from: start, to: end, window: nil,
+                    destination: divider, deliver: { sent.append(($0, $1)) }, wait: { _ in })
+            }
+            drain()
+            check("Missing source window never falls back to moving the real cursor", completed == false && sent.isEmpty)
+            Task { @MainActor in
+                completed = await MenuBarArranger.commandDrag(from: start, to: end, window: sourceWindow,
+                    destination: nil, deliver: { sent.append(($0, $1)) }, wait: { _ in })
+            }
+            drain()
+            check("Missing destination window posts no partial drag", completed == false && sent.isEmpty)
+            Task { @MainActor in
+                completed = await MenuBarArranger.commandDrag(from: start, to: end, window: sourceWindow,
+                    destination: divider, deliver: { sent.append(($0, $1)) }, wait: { _ in throw CancellationError() })
+            }
+            drain()
+            check("An interrupted drag releases its source window without dropping at the destination", completed == false && sent.map { $0.0.type } == [.leftMouseDown, .leftMouseUp] && sent.last?.0.location == start && sent.last?.0.flags.contains(.maskCommand) == false)
+        }
+        do {
             var clicks = 0
             let fallback: () -> String? = { clicks += 1; return "outside the visible menu bar" }
             let opened = MenuDiscovery.performMenuAction(press: { .success }, fallbackClick: fallback)
@@ -134,13 +170,15 @@ enum ControllerTests {
                 unexpectedHiddenItems: { _, _ in true }, arrange: { _, _, _ in
                     moves += 1
                     return moves == 1 ? MenuBarArranger.Outcome() :
-                        MenuBarArranger.Outcome(failed: [fresh], failedTitles: ["New App"])
+                        MenuBarArranger.Outcome(failed: [fresh], diagnostics: ["sourceWindow=nil dispatched=false"], failedTitles: ["New App"])
                 })
             c.settings(delay: 30, autoRehide: false, hoverReveal: false)
             c.apply([ollama]); drain(0.4); c.refreshDivider(); drain(0.4)
             check("A new icon that refuses to move leaves the divider revealed with a named error", c.mode == .revealed && c.paused && c.failure?.contains("New App") == true)
             c.refreshDivider(); drain(0.4)
+            check("Failed move diagnostics remain available for the signed app status report", c.lastArrangementDiagnostics == ["sourceWindow=nil dispatched=false"])
             check("Failed automatic repair does not loop or silently mark the icon hidden", moves == 2 && c.hidden == [ollama])
+            check("An inaccessible icon is not blamed on its app or assigned a manual drag", c.failure?.contains("Command-drag") == false && c.failure?.contains("may not allow") == false && c.failure?.contains("Hiding is paused") == true)
             c.restoreForQuit()
         }
         do {

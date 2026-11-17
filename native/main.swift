@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPo
                                "hiddenCount": self.model.visibility.hidden.count, "mode": "\(self.model.visibility.mode)",
                                "backend": self.model.visibility.backend.rawValue, "paused": self.model.visibility.paused, "orderingValid": self.model.visibility.mode == .idle || self.model.visibility.orderingValid,
                                "message": self.model.visibility.failure ?? "", "shelfOpen": self.popover.isShown,
+                               "lastArrangement": self.model.visibility.lastArrangementDiagnostics,
                                "launcherEnabled": self.model.launcher.settings.enabled,
                                "launcherOpen": self.launcherController?.isVisible ?? false,
                                "launcherTab": self.model.launcher.tab,

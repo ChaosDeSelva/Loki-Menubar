@@ -33,6 +33,7 @@ final class VisibilityController: NSObject, ObservableObject {
     var usesAllowlist: Bool { backend == .allowlist }
     private(set) var hidden = Set<String>()
     private(set) var paused = false
+    private(set) var lastArrangementDiagnostics: [String] = []
     private let allowlist: MenuBarAllowlist
     private let captureInUse: () -> Bool
     private let installed: () -> Bool
@@ -134,6 +135,7 @@ final class VisibilityController: NSObject, ObservableObject {
                     })
                 guard !Task.isCancelled, !stopped else { return }
                 arrangementTask = nil
+                lastArrangementDiagnostics = outcome.diagnostics
                 setMode(.revealed)
                 if let next = queuedChoice {
                     queuedChoice = nil
@@ -147,7 +149,8 @@ final class VisibilityController: NSObject, ObservableObject {
                 // An icon that should stay visible but could not leave the hidden side would vanish on collapse.
                 let stranded = outcome.failed.filter { !hidden.contains($0) }
                 if !outcome.failed.isEmpty {
-                    setFailure("Couldn’t move \(ListFormatter.localizedString(byJoining: outcome.failedTitles)). That app may not allow it; try Command-dragging it yourself.")
+                    let names = ListFormatter.localizedString(byJoining: outcome.failedTitles.isEmpty ? outcome.failed : outcome.failedTitles)
+                    setFailure("Loki couldn’t reposition \(names)." + (stranded.isEmpty ? "" : " Hiding is paused because an unchecked icon could not be brought back. A crowded menu bar may still leave it out of view."))
                 }
                 if hidden.isEmpty { setMode(.idle) }
                 else if revealRequested || !stranded.isEmpty { pause() }

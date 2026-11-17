@@ -439,7 +439,7 @@ struct SettingsView: View {
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                     Text("Optional Quick Chat sends only the conversation you type to your chosen AI provider through its command-line client. Provider usage limits and data policies apply.")
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    Text(model.visibility.usesAllowlist ? "Choose apps to hide in Menu bar. On macOS 27, Loki uses an undocumented macOS interface. Quitting Loki shows every icon again." : "Choose icons to hide in Menu bar. Loki moves them behind a divider using public macOS interfaces. Quitting Loki shows every icon again.")
+                    Text(model.visibility.usesAllowlist ? "Choose apps to hide in Menu bar. On macOS 27, Loki uses an undocumented macOS interface. Quitting Loki shows every icon again." : "Choose icons to hide in Menu bar. Loki moves them behind a divider. Quitting Loki removes the divider.")
                         .font(.system(size: 12)).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
                     Button("Open settings folder") { model.openSettingsFolder() }.buttonStyle(.plain).foregroundStyle(model.accent).font(.system(size: 12))
                 }
@@ -752,7 +752,7 @@ struct MenuBarView: View {
     @ViewBuilder private var backendNote: some View {
         switch visibility.backend {
         case .divider:
-            Text("Loki Command-drags each chosen icon behind a hidden divider; your pointer moves for a moment. Clock and Control Center stay put; macOS pins them.")
+            Text("Loki moves chosen icons behind a divider. Clock and Control Center stay put; macOS pins them.")
                 .font(.caption).foregroundStyle(LokiStyle.muted).fixedSize(horizontal: false, vertical: true)
         case .allowlist:
             VStack(alignment: .leading, spacing: 8) {
@@ -775,7 +775,7 @@ struct MenuBarView: View {
 
     private var footer: String {
         switch visibility.backend {
-        case .divider: return "Loki uses only public macOS interfaces here: a status item for the divider and Accessibility to move icons. Quitting Loki shows every icon again. Loki never captures your screen."
+        case .divider: return "Quitting Loki removes its divider. Icons that do not fit beside the notch may still be outside the visible menu-bar area. Loki never captures your screen."
         case .allowlist: return "Hiding lasts only while Loki runs: quitting Loki, or a crash, shows every icon again. Loki never captures your screen."
         case .unavailable: return "Loki never captures your screen, and it leaves your menu bar exactly as macOS arranges it."
         }

@@ -1,15 +1,15 @@
 import AppKit
 import ApplicationServices
 
-/// Moves menu extras across Loki's divider with the same Command-drag a person would make.
-/// Public APIs only: Accessibility for positions, CGEvent for the drag. Every move is re-read
-/// afterwards, so a failure is reported instead of assumed away.
+/// Delivers drags to status windows, including icons outside the visible menu bar.
+/// Accessibility positions after collapse, not event delivery, determine success.
 @MainActor
 enum MenuBarArranger {
     struct Outcome {
         var moved = 0
         var failed: [String] = []
         var missing: [String] = []
+        var diagnostics: [String] = []
         /// Display names for `failed`, so the message can say which icons stayed put.
         var failedTitles: [String] = []
     }
@@ -43,8 +43,6 @@ enum MenuBarArranger {
 
         guard let planned = await pending() else { outcome.failed = Array(hidden); return outcome }
         var remaining = planned
-        let pointer = CGEvent(source: nil)?.location
-        defer { if let pointer { CGWarpMouseCursorPosition(pointer) } }
         for attempt in 0..<2 where !remaining.isEmpty {
             collapse(false)
             try? await Task.sleep(nanoseconds: settle)
@@ -52,12 +50,16 @@ enum MenuBarArranger {
                 guard !Task.isCancelled else { return outcome }
                 guard let item = byID[move.id], let element = item.element, let from = MenuDiscovery.frame(element),
                       let target = divider() else { continue }
-                await commandDrag(from: CGPoint(x: from.midX, y: from.midY),
-                                  to: MenuBarSections.dropPoint(divider: target, toHidden: move.toHidden, attempt: attempt),
-                                  window: statusWindow(for: from, owner: item.pid))
+                let sourceWindow = statusWindow(for: from, owner: item.pid)
+                let targetWindow = statusWindow(for: target, owner: ProcessInfo.processInfo.processIdentifier)
+                let sent = await commandDrag(from: CGPoint(x: from.midX, y: from.midY),
+                                             to: MenuBarSections.dropPoint(divider: target, toHidden: move.toHidden, attempt: attempt),
+                                             window: sourceWindow, destination: targetWindow)
+                outcome.diagnostics.append("attempt=\(attempt + 1) item=\(move.id) from=\(from) divider=\(target) sourceWindow=\(String(describing: sourceWindow)) targetWindow=\(String(describing: targetWindow)) dispatched=\(sent)")
                 try? await Task.sleep(nanoseconds: 350_000_000)
             }
             guard let next = await pending() else { break }
+            outcome.diagnostics.append("remaining=\(next.map(\.id).joined(separator: ","))")
             remaining = next
         }
         let left = Set(remaining.map(\.id))
@@ -111,44 +113,50 @@ enum MenuBarArranger {
         return MenuGeometry.statusWindow(for: frame, owner: owner, hosts: hosts, windows: windows)
     }
 
-    static func commandDrag(from: CGPoint, to: CGPoint, window: MenuGeometry.StatusWindow?) async {
-        let visibleSource = NSScreen.screens.contains { screen in
-            let area = screen.auxiliaryTopRightArea ?? CGRect(x: screen.frame.minX + 120,
-                y: screen.frame.maxY - NSStatusBar.system.thickness,
-                width: max(0, screen.frame.width - 120), height: NSStatusBar.system.thickness)
-            return MenuBarSections.flipped(area, primaryHeight: primaryHeight).contains(from)
+    // The public hit-test hints do not set NSEvent.windowNumber; field 0x33 does.
+    static let eventWindowNumber = CGEventField(rawValue: 0x33)!
+
+    static func dragEvent(_ type: CGEventType, at point: CGPoint,
+                          target: MenuGeometry.StatusWindow, receiver: pid_t,
+                          source: CGEventSource) -> CGEvent? {
+        guard target.id != 0, receiver > 0, point.x.isFinite, point.y.isFinite,
+              let event = CGEvent(mouseEventSource: source, mouseType: type,
+                                  mouseCursorPosition: point, mouseButton: .left) else { return nil }
+        event.flags = type == .leftMouseDown ? .maskCommand : []
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(receiver))
+        event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(target.id))
+        event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(target.id))
+        event.setIntegerValueField(eventWindowNumber, value: Int64(target.id))
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
+        return event
+    }
+
+    @discardableResult
+    static func commandDrag(from: CGPoint, to: CGPoint, window: MenuGeometry.StatusWindow?,
+                            destination: MenuGeometry.StatusWindow?,
+                            deliver: (CGEvent, pid_t) -> Void = { event, pid in event.postToPid(pid) },
+                            wait: (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) async -> Bool {
+        guard !Task.isCancelled, let window, let destination,
+              let source = CGEventSource(stateID: .privateState),
+              let down = dragEvent(.leftMouseDown, at: from, target: window, receiver: window.pid, source: source),
+              let drag = dragEvent(.leftMouseDragged, at: to, target: window, receiver: window.pid, source: source),
+              let up = dragEvent(.leftMouseUp, at: to, target: destination, receiver: window.pid, source: source),
+              let cancel = dragEvent(.leftMouseUp, at: from, target: window, receiver: window.pid, source: source) else { return false }
+        source.localEventsSuppressionInterval = 0
+        var completed = false
+        // Process-local delivery avoids global mouse input and never warps the user's cursor.
+        deliver(down, window.pid)
+        defer { deliver(completed ? up : cancel, window.pid) }
+        do {
+            try await wait(120_000_000)
+            try Task.checkCancellation()
+            deliver(drag, window.pid)
+            try await wait(60_000_000)
+            try Task.checkCancellation()
+            completed = true
+            return true
+        } catch {
+            return false
         }
-        guard window != nil || visibleSource,
-              let source = CGEventSource(stateID: .hidSystemState) else { return }
-        func post(_ type: CGEventType, _ point: CGPoint) {
-            guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else { return }
-            event.flags = .maskCommand
-            if let window {
-                // Coordinate-only input cannot identify an item whose slot lies beneath the notch.
-                event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(window.pid))
-                event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.id))
-                event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.id))
-                event.post(tap: .cgAnnotatedSessionEventTap)
-            } else {
-                event.post(tap: .cghidEventTap)
-            }
-        }
-        if window == nil {
-            post(.mouseMoved, from)
-            try? await Task.sleep(nanoseconds: 40_000_000)
-        }
-        guard !Task.isCancelled else { return }
-        post(.leftMouseDown, from)
-        defer { post(.leftMouseUp, to) }
-        // The menu bar only starts a drag after a short hold.
-        try? await Task.sleep(nanoseconds: 120_000_000)
-        let steps = 14
-        for step in 1...steps {
-            guard !Task.isCancelled else { return }
-            let t = CGFloat(step) / CGFloat(steps)
-            post(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
-            try? await Task.sleep(nanoseconds: 12_000_000)
-        }
-        try? await Task.sleep(nanoseconds: 60_000_000)
     }
 }

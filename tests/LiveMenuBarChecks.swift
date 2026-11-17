@@ -62,16 +62,23 @@ struct LiveMenuBarChecks {
 
     @MainActor
     static func move(_ id: String, hidden: Bool) async throws {
-        let pointer = CGEvent(source: nil)?.location
-        defer { if let pointer { CGWarpMouseCursorPosition(pointer) } }
         for attempt in 0..<2 {
             _ = try command("--reveal-all")
             try await Task.sleep(nanoseconds: 600_000_000)
             let (item, frame, line) = try await position(id)
             let window = MenuBarArranger.statusWindow(for: frame, owner: item.pid)
             print("attempt=\(attempt) destination=\(hidden ? "hidden" : "visible") window=\(String(describing: window))")
-            await MenuBarArranger.commandDrag(from: CGPoint(x: frame.midX, y: frame.midY),
-                to: MenuBarSections.dropPoint(divider: line, toHidden: hidden, attempt: attempt), window: window)
+            let pointer = CGEvent(source: nil)?.location
+            let delivered = await MenuBarArranger.commandDrag(from: CGPoint(x: frame.midX, y: frame.midY),
+                to: MenuBarSections.dropPoint(divider: line, toHidden: hidden, attempt: attempt), window: window,
+                destination: MenuBarArranger.statusWindow(for: line, owner: 0))
+            guard delivered else { try fail("No complete targeted drag was dispatched; source or divider window is missing, or the drag was cancelled") }
+            if let pointer, let after = CGEvent(source: nil)?.location {
+                guard hypot(after.x - pointer.x, after.y - pointer.y) < 1 else {
+                    try fail("The cursor moved during the drag test; it was not warped back")
+                }
+                print("PASS: cursor stayed in place during targeted drag")
+            }
             try await Task.sleep(nanoseconds: 500_000_000)
             _ = try command("--toggle-hidden")
             try await Task.sleep(nanoseconds: 600_000_000)
