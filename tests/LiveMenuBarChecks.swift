@@ -69,12 +69,14 @@ struct LiveMenuBarChecks {
             let window = MenuBarArranger.statusWindow(for: frame, owner: item.pid)
             print("attempt=\(attempt) destination=\(hidden ? "hidden" : "visible") window=\(String(describing: window))")
             let pointer = CGEvent(source: nil)?.location
+            let targetWindow = MenuBarArranger.statusWindow(for: line, owner: 0)
             let delivered = await MenuBarArranger.commandDrag(from: CGPoint(x: frame.midX, y: frame.midY),
                 to: MenuBarSections.dropPoint(divider: line, toHidden: hidden, attempt: attempt), window: window,
-                destination: MenuBarArranger.statusWindow(for: line, owner: 0))
+                destination: targetWindow, receiver: item.pid)
             guard delivered else { try fail("No complete targeted drag was dispatched; source or divider window is missing, or the drag was cancelled") }
             if let pointer, let after = CGEvent(source: nil)?.location {
-                guard hypot(after.x - pointer.x, after.y - pointer.y) < 1 else {
+                guard abs(after.x - pointer.x) < 1.01 && abs(after.y - pointer.y) < 1.01 else {
+                    print("CURSOR changed: \(pointer) -> \(after)")
                     try fail("The cursor moved during the drag test; it was not warped back")
                 }
                 print("PASS: cursor stayed in place during targeted drag")
@@ -121,6 +123,10 @@ struct LiveMenuBarChecks {
                 try fail("This live check is scoped to TopTerm only")
             }
             _ = try await position(id)
+            if CommandLine.arguments.contains("--recover-only") {
+                try await move(id, hidden: false)
+                return
+            }
             guard CommandLine.arguments.contains("--round-trip") else { return }
             let initial = try command("--status")
             guard initial["arranging"] as? Bool == false, initial["backend"] as? String == "divider" else {

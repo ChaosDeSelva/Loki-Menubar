@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// Drives VisibilityController's macOS 27 bookkeeping through a fake allowlist.
 /// Each scenario mirrors a defect found in review or on hardware; none touches the real menu bar.
@@ -49,33 +50,34 @@ enum ControllerTests {
             var completed: Bool?
             Task { @MainActor in
                 completed = await MenuBarArranger.commandDrag(from: start, to: end, window: sourceWindow,
-                    destination: divider, deliver: { sent.append(($0, $1)) }, wait: { _ in })
+                    destination: divider, receiver: 111, deliver: { sent.append(($0, $1)) }, preservePointer: { {} }, wait: { _ in })
             }
             drain()
-            check("Offscreen drags dispatch to the window host without a coordinate fallback", completed == true && sent.map { $0.1 } == [100, 100, 100])
-            check("The drag sends no mouse-move stream", sent.map { $0.0.type } == [.leftMouseDown, .leftMouseDragged, .leftMouseUp])
-            check("AppKit sees the source window on press and the divider on release", sent.compactMap { NSEvent(cgEvent: $0.0)?.windowNumber } == [41, 41, 42])
-            check("Only the press carries Command; release ends the drag", sent.map { $0.0.flags.contains(.maskCommand) } == [true, false, false])
-            check("Offscreen source and intended destination coordinates survive event construction", sent.first?.0.location == start && sent.last?.0.location == end)
+            check("Hosted offscreen drags reach the source app rather than Control Center", completed == true && sent.map { $0.1 } == [111, 111] && sent.allSatisfy { $0.0.getIntegerValueField(.eventTargetUnixProcessID) == 111 })
+            check("The drag sends no mouse-move stream", sent.map { $0.0.type } == [.leftMouseDown, .leftMouseUp])
+            check("AppKit sees the source window on press and the divider on release", sent.compactMap { NSEvent(cgEvent: $0.0)?.windowNumber } == [41, 42])
+            check("Only the press carries Command; release ends the drag", sent.map { $0.0.flags.contains(.maskCommand) } == [true, false])
+            check("Offscreen pickup is addressed by window ID at the destination boundary", sent.first?.0.location == CGPoint(x: 1042, y: 0) && sent.last?.0.location == CGPoint(x: 1004, y: 0))
             sent.removeAll(); completed = nil
             Task { @MainActor in
                 completed = await MenuBarArranger.commandDrag(from: start, to: end, window: nil,
-                    destination: divider, deliver: { sent.append(($0, $1)) }, wait: { _ in })
+                    destination: divider, receiver: 111, deliver: { sent.append(($0, $1)) }, preservePointer: { {} }, wait: { _ in })
             }
             drain()
             check("Missing source window never falls back to moving the real cursor", completed == false && sent.isEmpty)
             Task { @MainActor in
                 completed = await MenuBarArranger.commandDrag(from: start, to: end, window: sourceWindow,
-                    destination: nil, deliver: { sent.append(($0, $1)) }, wait: { _ in })
+                    destination: nil, receiver: 111, deliver: { sent.append(($0, $1)) }, preservePointer: { {} }, wait: { _ in })
             }
             drain()
             check("Missing destination window posts no partial drag", completed == false && sent.isEmpty)
+            var pointerRestored = false
             Task { @MainActor in
                 completed = await MenuBarArranger.commandDrag(from: start, to: end, window: sourceWindow,
-                    destination: divider, deliver: { sent.append(($0, $1)) }, wait: { _ in throw CancellationError() })
+                    destination: divider, receiver: 111, deliver: { sent.append(($0, $1)) }, preservePointer: { { pointerRestored = true } }, wait: { _ in throw CancellationError() })
             }
             drain()
-            check("An interrupted drag releases its source window without dropping at the destination", completed == false && sent.map { $0.0.type } == [.leftMouseDown, .leftMouseUp] && sent.last?.0.location == start && sent.last?.0.flags.contains(.maskCommand) == false)
+            check("An interrupted relay still sends a release and restores the pointer", pointerRestored && completed == false && sent.map { $0.0.type } == [.leftMouseDown, .leftMouseUp] && sent.last?.0.location == CGPoint(x: 1004, y: 0) && sent.last?.0.flags.contains(.maskCommand) == false)
         }
         do {
             var clicks = 0
@@ -96,8 +98,12 @@ enum ControllerTests {
                 unexpectedHiddenItems: { _, _ in false },
                 arrange: { hidden, _, _ in moves.append(hidden); return MenuBarArranger.Outcome() })
             c.settings(delay: 30, autoRehide: false, hoverReveal: false)
+            var startupModes: [MenuBarSections.Mode] = []
+            let observation = c.$mode.sink { startupModes.append($0) }
             c.restoreSavedSelection([ollama]); drain(0.4)
             check("Startup reconciles saved choices instead of blindly collapsing old positions", moves == [[ollama]] && c.mode == .collapsed)
+            check("Successful reconciliation does not briefly reveal every icon before collapsing", !startupModes.contains(.revealed))
+            observation.cancel()
             c.restoreForQuit(); c.restoreSavedSelection([ollama]); drain(0.4)
             check("A delayed startup cannot restore hiding after quit", moves.count == 1)
         }

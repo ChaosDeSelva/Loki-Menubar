@@ -136,8 +136,8 @@ final class VisibilityController: NSObject, ObservableObject {
                 guard !Task.isCancelled, !stopped else { return }
                 arrangementTask = nil
                 lastArrangementDiagnostics = outcome.diagnostics
-                setMode(.revealed)
                 if let next = queuedChoice {
+                    setMode(.revealed, updateDivider: false)
                     queuedChoice = nil
                     let keepVisible = revealRequested
                     apply(next)
@@ -153,7 +153,7 @@ final class VisibilityController: NSObject, ObservableObject {
                     setFailure("Loki couldn’t reposition \(names)." + (stranded.isEmpty ? "" : " Hiding is paused because an unchecked icon could not be brought back. A crowded menu bar may still leave it out of view."))
                 }
                 if hidden.isEmpty { setMode(.idle) }
-                else if revealRequested || !stranded.isEmpty { pause() }
+                else if revealRequested || !stranded.isEmpty { setMode(.revealed); pause() }
                 else { collapse() }
             }
         }
@@ -167,7 +167,7 @@ final class VisibilityController: NSObject, ObservableObject {
 
     func collapse() {
         guard !stopped else { return }
-        guard mode == .revealed, !hidden.isEmpty, backend != .unavailable else {
+        guard (mode == .revealed || (mode == .arranging && arrangementTask == nil)), !hidden.isEmpty, backend != .unavailable else {
             if mode == .revealed && hidden.isEmpty { setMode(.idle) }
             return
         }
@@ -179,7 +179,7 @@ final class VisibilityController: NSObject, ObservableObject {
         case .divider:
             guard orderingValid else {
                 setFailure("Loki’s divider is not left of its rune. Choose Apply to let Loki reset it.")
-                pause(); return
+                setMode(.revealed); pause(); return
             }
             setMode(.collapsed)
         case .allowlist:
@@ -269,13 +269,13 @@ final class VisibilityController: NSObject, ObservableObject {
         if failure != message { failure = message }
     }
 
-    private func setMode(_ new: MenuBarSections.Mode) {
+    private func setMode(_ new: MenuBarSections.Mode, updateDivider: Bool = true) {
         layoutRevision += 1
         if backend == .allowlist && new != .collapsed && (mode == .collapsed || allowlistPending) {
             cancelAllowlist()
         }
         mode = new
-        if let divider {
+        if let divider, updateDivider, new != .arranging {
             divider.length = MenuBarSections.dividerLength(new)
             let image = new == .revealed || new == .arranging ? NSImage(systemSymbolName: "chevron.compact.left", accessibilityDescription: "Hide icons") : nil
             image?.isTemplate = true

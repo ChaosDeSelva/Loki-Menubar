@@ -54,8 +54,8 @@ enum MenuBarArranger {
                 let targetWindow = statusWindow(for: target, owner: ProcessInfo.processInfo.processIdentifier)
                 let sent = await commandDrag(from: CGPoint(x: from.midX, y: from.midY),
                                              to: MenuBarSections.dropPoint(divider: target, toHidden: move.toHidden, attempt: attempt),
-                                             window: sourceWindow, destination: targetWindow)
-                outcome.diagnostics.append("attempt=\(attempt + 1) item=\(move.id) from=\(from) divider=\(target) sourceWindow=\(String(describing: sourceWindow)) targetWindow=\(String(describing: targetWindow)) dispatched=\(sent)")
+                                             window: sourceWindow, destination: targetWindow, receiver: item.pid)
+                outcome.diagnostics.append("attempt=\(attempt + 1) item=\(move.id) from=\(from) divider=\(target) receiver=\(item.pid) sourceWindow=\(String(describing: sourceWindow)) targetWindow=\(String(describing: targetWindow)) dispatched=\(sent)")
                 try? await Task.sleep(nanoseconds: 350_000_000)
             }
             guard let next = await pending() else { break }
@@ -133,29 +133,38 @@ enum MenuBarArranger {
 
     @discardableResult
     static func commandDrag(from: CGPoint, to: CGPoint, window: MenuGeometry.StatusWindow?,
-                            destination: MenuGeometry.StatusWindow?,
-                            deliver: (CGEvent, pid_t) -> Void = { event, pid in event.postToPid(pid) },
+                            destination: MenuGeometry.StatusWindow?, receiver: pid_t,
+                            deliver: @escaping (CGEvent, pid_t) async throws -> Void = { event, pid in
+                                try await MenuBarEventDelivery(event: event, receiver: pid).send()
+                            },
+                            preservePointer: @MainActor () -> (@MainActor () -> Void) = {
+                                let guardObject = MenuBarPointerGuard()
+                                return { guardObject.restore() }
+                            },
                             wait: (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) async -> Bool {
-        guard !Task.isCancelled, let window, let destination,
-              let source = CGEventSource(stateID: .privateState),
-              let down = dragEvent(.leftMouseDown, at: from, target: window, receiver: window.pid, source: source),
-              let drag = dragEvent(.leftMouseDragged, at: to, target: window, receiver: window.pid, source: source),
-              let up = dragEvent(.leftMouseUp, at: to, target: destination, receiver: window.pid, source: source),
-              let cancel = dragEvent(.leftMouseUp, at: from, target: window, receiver: window.pid, source: source) else { return false }
+        guard !Task.isCancelled, receiver > 0, let window, let destination,
+              let source = CGEventSource(stateID: .hidSystemState) else { return false }
+        let toHidden = to.x < destination.frame.midX
+        let edge = toHidden ? destination.frame.minX : destination.frame.maxX
+        let rightward = window.frame.minX < edge
+        let pickup = CGPoint(x: edge + (rightward ? 0 : (toHidden ? -1 : 1)), y: destination.frame.minY)
+        let drop = CGPoint(x: edge - (rightward ? window.frame.width : 0), y: destination.frame.minY)
+        guard let down = dragEvent(.leftMouseDown, at: pickup, target: window, receiver: receiver, source: source),
+              let up = dragEvent(.leftMouseUp, at: drop, target: destination, receiver: receiver, source: source) else { return false }
         source.localEventsSuppressionInterval = 0
-        var completed = false
-        // Process-local delivery avoids global mouse input and never warps the user's cursor.
-        deliver(down, window.pid)
-        defer { deliver(completed ? up : cancel, window.pid) }
+        down.setIntegerValueField(.mouseEventClickState, value: 0)
+        up.setIntegerValueField(.mouseEventClickState, value: 0)
+        let restorePointer = preservePointer()
+        defer { restorePointer() }
         do {
-            try await wait(120_000_000)
+            try await deliver(down, receiver)
+            try await wait(80_000_000)
             try Task.checkCancellation()
-            deliver(drag, window.pid)
-            try await wait(60_000_000)
-            try Task.checkCancellation()
-            completed = true
+            try await deliver(up, receiver)
             return true
         } catch {
+            // Release even after cancellation or a missing acknowledgement; never leave a live drag.
+            await Task { @MainActor in try? await deliver(up, receiver) }.value
             return false
         }
     }

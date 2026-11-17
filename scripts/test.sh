@@ -13,7 +13,7 @@ swiftc -swift-version 5 -module-cache-path "$LOKI_ROOT/build/module-cache" \
   -import-objc-header "$LOKI_ROOT/nativeBridge/include/LOKMenuBarBridge.h" "$LOKI_ROOT/build/controller-bridge.o" \
   -framework AppKit -framework ApplicationServices -framework CoreAudio -framework CoreMediaIO \
   "$LOKI_ROOT/native/VisibilityController.swift" "$LOKI_ROOT/native/MenuBarSections.swift" "$LOKI_ROOT/native/MenuBarVisibility.swift" \
-  "$LOKI_ROOT/native/MenuBarArranger.swift" "$LOKI_ROOT/native/MenuDiscovery.swift" "$LOKI_ROOT/native/CaptureActivity.swift" \
+  "$LOKI_ROOT/native/MenuBarArranger.swift" "$LOKI_ROOT/native/MenuBarEventDelivery.swift" "$LOKI_ROOT/native/MenuDiscovery.swift" "$LOKI_ROOT/native/CaptureActivity.swift" \
   "$LOKI_ROOT/native/MenuLabel.swift" "$LOKI_ROOT/native/ShelfEngine.swift" "$LOKI_ROOT/native/MenuGeometry.swift" \
   "$LOKI_ROOT/tests/ControllerTests.swift" -o "$LOKI_ROOT/build/loki-controller-tests"
 "$LOKI_ROOT/build/loki-controller-tests"
