@@ -6,7 +6,7 @@ A little order. A little mischief. An original Swift/AppKit menu-bar utility for
 
 ## Release status
 
-**0.1.0-alpha.8 is an early preview,** published as a notarized pre-release. Apple Silicon; macOS 14 or later. Alpha 8 keeps newly launched icons visible unless selected for hiding and improves menu-item targeting. Loki hides icons two ways, depending on the macOS version: per icon behind a public divider on macOS 14 to 26, and per app through an undocumented Apple interface on macOS 27. On macOS 27.0.1 the owner confirmed that hiding one app left every other icon visible; the rest of the matrix is pending, see [Hide icons](#hide-icons). Earlier macOS versions, notched MacBooks, and multiple displays are not yet verified. See the explicit feature gaps below before installing.
+**0.1.0-alpha.9 is an early preview,** published as a notarized pre-release. Apple Silicon; macOS 14 or later. Alpha 9 targets each icon’s host window directly when arranging icons on macOS 14 to 26. Loki hides icons two ways, depending on the macOS version: per icon behind a public divider on macOS 14 to 26, and per app through an undocumented Apple interface on macOS 27. On macOS 27.0.1 the owner confirmed that hiding one app left every other icon visible; the rest of the matrix is pending, see [Hide icons](#hide-icons). Earlier macOS versions, notched MacBooks, and multiple displays are not yet verified. See the explicit feature gaps below before installing.
 
 ## What is included
 
