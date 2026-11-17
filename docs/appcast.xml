@@ -7,6 +7,15 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>Loki</title>
         <item>
             <title>0.1.0</title>
+            <pubDate>Mon, 16 Nov 2026 19:59:15 -0800</pubDate>
+            <sparkle:version>15</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/ChaosDeSelva/Loki-Menubar/releases/download/v0.1.0-alpha.10/Loki-Menubar-0.1.0-alpha.10-arm64.zip" length="2207578" type="application/octet-stream" sparkle:edSignature="l582JC93H7WTm/4LzVhkgNs6N0wXoyM4GaKhteRqAzdJ0m8Yx897+CzE7sBVjspAdYIi6F2RJUK3P1ot+942Ag=="/>
+        </item>
+        <item>
+            <title>0.1.0</title>
             <pubDate>Mon, 16 Nov 2026 18:07:33 -0800</pubDate>
             <sparkle:version>14</sparkle:version>
             <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
@@ -23,18 +32,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/ChaosDeSelva/Loki-Menubar/releases/download/v0.1.0-alpha.8/Loki-Menubar-0.1.0-alpha.8-arm64.zip" length="2193210" type="application/octet-stream" sparkle:edSignature="hvE9k56qexyl6eJPCnlV//5SHEwQGx45JGM5K1tvFzfjpXwLcibUQ0ifOfFUQ7r8i6swSziEfh0/tIJMv9u3Ag=="/>
         </item>
-        <item>
-            <title>0.1.0</title>
-            <pubDate>Fri, 13 Nov 2026 21:14:33 -0800</pubDate>
-            <sparkle:version>12</sparkle:version>
-            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/ChaosDeSelva/Loki-Menubar/releases/download/v0.1.0-alpha.7/Loki-Menubar-0.1.0-alpha.7-arm64.zip" length="2182866" type="application/octet-stream" sparkle:edSignature="F1uttNPl3eJNbaUnf+NZg6Rpi15JDlNxr1ynV+HCZugAOUuOITMt/NYdybAs7NKRmvvoeV4jDN54+agGgssKDQ=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: N/jQ9pG5qCuJI5ATOKYQmgTr3Nhac30H8t+OG4PtVMDU47ke5uX3I5bRvh1yMfTqSi/+wyDGvDsy+Esm9189DQ==
-length: 2573
+edSignature: mkvRtD7p9+vk64aCypAqj/Z7xeBL7R8KVPufL4oPI1mJVXpWtpAZrUdXBRtcFxlUDnliIqfYQ/4zP1R+HMVmBQ==
+length: 2575
 -->
