@@ -6,8 +6,8 @@ LOKI_APP="$LOKI_BUILD/Loki.app"
 # Single version source. package.sh and notarize.sh read these back from the
 # built Info.plist. Increment LOKI_BUILD_NUMBER for every published build.
 LOKI_MARKETING_VERSION="${LOKI_MARKETING_VERSION:-0.1.0}"
-LOKI_BUILD_NUMBER="${LOKI_BUILD_NUMBER:-12}"
-LOKI_RELEASE_LABEL="${LOKI_RELEASE_LABEL:-0.1.0-alpha.7}"
+LOKI_BUILD_NUMBER="${LOKI_BUILD_NUMBER:-13}"
+LOKI_RELEASE_LABEL="${LOKI_RELEASE_LABEL:-0.1.0-alpha.8}"
 [[ "$LOKI_MARKETING_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "Invalid LOKI_MARKETING_VERSION: $LOKI_MARKETING_VERSION" >&2; exit 1; }
 [[ "$LOKI_BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "Invalid LOKI_BUILD_NUMBER: $LOKI_BUILD_NUMBER" >&2; exit 1; }
 [[ "$LOKI_RELEASE_LABEL" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid LOKI_RELEASE_LABEL: $LOKI_RELEASE_LABEL" >&2; exit 1; }
