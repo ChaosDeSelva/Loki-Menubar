@@ -47,6 +47,13 @@ enum Tests {
         check("Ordinary content area rejected", !MenuGeometry.isSafe(CGRect(x: 1200, y: 200, width: 24, height: 30), on: [screen]))
         check("Oversized accessibility item rejected", !MenuGeometry.isSafe(CGRect(x: 500, y: 0, width: 900, height: 30), on: [screen]))
         check("Negative-origin display supported", MenuGeometry.isSafe(CGRect(x: -200, y: 0, width: 24, height: 30), on: [CGRect(x: -1920, y: 0, width: 1920, height: 1080)]))
+        let hiddenSlot = CGRect(x: -4000, y: 4, width: 24, height: 24)
+        let hostedWindow = MenuGeometry.StatusWindow(id: 41, pid: 500, frame: CGRect(x: -4007, y: 0, width: 38, height: 32))
+        check("An offscreen icon resolves to its Control Center host", MenuGeometry.statusWindow(for: hiddenSlot, owner: 100, hosts: [500], windows: [hostedWindow]) == hostedWindow)
+        check("An unrelated window cannot receive a status-item drag", MenuGeometry.statusWindow(for: hiddenSlot, owner: 100, hosts: [], windows: [hostedWindow]) == nil)
+        check("Ambiguous status windows are refused", MenuGeometry.statusWindow(for: hiddenSlot, owner: 100, hosts: [500], windows: [hostedWindow, hostedWindow]) == nil)
+        check("A stale frame cannot target a nearby status window", MenuGeometry.statusWindow(for: hiddenSlot.offsetBy(dx: 28, dy: 0), owner: 100, hosts: [500], windows: [hostedWindow]) == nil)
+        check("A divider-sized window cannot be mistaken for an icon", MenuGeometry.statusWindow(for: hiddenSlot, owner: 100, hosts: [500], windows: [.init(id: 42, pid: 500, frame: CGRect(x: -5000, y: 0, width: 6000, height: 32))]) == nil)
         preferences.version = 1
         preferences.realms[0].groups = ["a": "Work"]
         try store.save(preferences)

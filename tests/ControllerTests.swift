@@ -42,6 +42,18 @@ enum ControllerTests {
     @MainActor
     static func run() {
         do {
+            var clicks = 0
+            let fallback: () -> String? = { clicks += 1; return "outside the visible menu bar" }
+            let opened = MenuDiscovery.performMenuAction(press: { .success }, fallbackClick: fallback)
+            check("A semantic status-item press opens without requiring a visible screen coordinate", opened == nil && clicks == 0)
+            let uncertain = MenuDiscovery.performMenuAction(press: { .cannotComplete }, fallbackClick: fallback)
+            check("A timed-out menu press is never double-clicked", uncertain?.contains("did not confirm") == true && clicks == 0)
+            let unsupported = MenuDiscovery.performMenuAction(press: { .actionUnsupported }, fallbackClick: fallback)
+            check("An unsupported press retains the guarded coordinate fallback", unsupported == "outside the visible menu bar" && clicks == 1)
+            _ = MenuDiscovery.performMenuAction(press: { .invalidUIElement }, fallbackClick: fallback)
+            check("A stale menu element cannot click another app", clicks == 1)
+        }
+        do {
             var moves: [Set<String>] = []
             let c = VisibilityController(backend: .divider, allowlist: FakeAllowlist(), trusted: { true },
                 validOrdering: { true }, interactionActive: { false },

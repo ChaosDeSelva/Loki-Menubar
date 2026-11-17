@@ -50,10 +50,11 @@ enum MenuBarArranger {
             try? await Task.sleep(nanoseconds: settle)
             for move in remaining {
                 guard !Task.isCancelled else { return outcome }
-                guard let element = byID[move.id]?.element, let from = MenuDiscovery.frame(element),
+                guard let item = byID[move.id], let element = item.element, let from = MenuDiscovery.frame(element),
                       let target = divider() else { continue }
                 await commandDrag(from: CGPoint(x: from.midX, y: from.midY),
-                                  to: MenuBarSections.dropPoint(divider: target, toHidden: move.toHidden, attempt: attempt))
+                                  to: MenuBarSections.dropPoint(divider: target, toHidden: move.toHidden, attempt: attempt),
+                                  window: statusWindow(for: from, owner: item.pid))
                 try? await Task.sleep(nanoseconds: 350_000_000)
             }
             guard let next = await pending() else { break }
@@ -94,15 +95,48 @@ enum MenuBarArranger {
 
     static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
 
-    private static func commandDrag(from: CGPoint, to: CGPoint) async {
-        guard let source = CGEventSource(stateID: .hidSystemState) else { return }
+    static func statusWindow(for frame: CGRect, owner: pid_t) -> MenuGeometry.StatusWindow? {
+        let hosts = Set(NSWorkspace.shared.runningApplications.filter {
+            ["com.apple.controlcenter", "com.apple.MenuBarAgent"].contains($0.bundleIdentifier ?? "")
+        }.map(\.processIdentifier))
+        let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] ?? []
+        let windows = list.compactMap { info -> MenuGeometry.StatusWindow? in
+            guard info[kCGWindowLayer as String] as? Int == Int(CGWindowLevelForKey(.statusWindow)),
+                  let id = info[kCGWindowNumber as String] as? CGWindowID,
+                  let pid = info[kCGWindowOwnerPID as String] as? pid_t,
+                  let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                  let rectangle = CGRect(dictionaryRepresentation: bounds) else { return nil }
+            return .init(id: id, pid: pid, frame: rectangle)
+        }
+        return MenuGeometry.statusWindow(for: frame, owner: owner, hosts: hosts, windows: windows)
+    }
+
+    static func commandDrag(from: CGPoint, to: CGPoint, window: MenuGeometry.StatusWindow?) async {
+        let visibleSource = NSScreen.screens.contains { screen in
+            let area = screen.auxiliaryTopRightArea ?? CGRect(x: screen.frame.minX + 120,
+                y: screen.frame.maxY - NSStatusBar.system.thickness,
+                width: max(0, screen.frame.width - 120), height: NSStatusBar.system.thickness)
+            return MenuBarSections.flipped(area, primaryHeight: primaryHeight).contains(from)
+        }
+        guard window != nil || visibleSource,
+              let source = CGEventSource(stateID: .hidSystemState) else { return }
         func post(_ type: CGEventType, _ point: CGPoint) {
             guard let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left) else { return }
             event.flags = .maskCommand
-            event.post(tap: .cghidEventTap)
+            if let window {
+                // Coordinate-only input cannot identify an item whose slot lies beneath the notch.
+                event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(window.pid))
+                event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.id))
+                event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.id))
+                event.post(tap: .cgAnnotatedSessionEventTap)
+            } else {
+                event.post(tap: .cghidEventTap)
+            }
         }
-        post(.mouseMoved, from)
-        try? await Task.sleep(nanoseconds: 40_000_000)
+        if window == nil {
+            post(.mouseMoved, from)
+            try? await Task.sleep(nanoseconds: 40_000_000)
+        }
         guard !Task.isCancelled else { return }
         post(.leftMouseDown, from)
         defer { post(.leftMouseUp, to) }

@@ -153,9 +153,22 @@ enum MenuDiscovery {
         guard trusted else { return "Allow Accessibility in System Settings, then try again." }
         guard let element = item.element else { return "This item is no longer available. Refresh the shelf." }
         AXUIElementSetMessagingTimeout(element, 0.3)
-        // Avoid remote AX actions remaining pending during menu tracking.
-        // Use the same down/up sequence as a real click,
-        // and only for a freshly resolved menu-extra rectangle on a screen edge.
+        // A semantic press reaches a status button even when its coordinates are behind the notch.
+        // A timed-out press may already have opened a menu; never follow it with a second click.
+        return performMenuAction(press: { AXUIElementPerformAction(element, kAXPressAction as CFString) },
+                                 fallbackClick: { clickVisibleMenuItem(element) })
+    }
+
+    static func performMenuAction(press: () -> AXError, fallbackClick: () -> String?) -> String? {
+        switch press() {
+        case .success: return nil
+        case .actionUnsupported, .notImplemented: return fallbackClick()
+        case .cannotComplete: return "macOS did not confirm opening this menu item. Check whether its menu opened before trying again."
+        default: return "This menu item is no longer available. Refresh the shelf."
+        }
+    }
+
+    private static func clickVisibleMenuItem(_ element: AXUIElement) -> String? {
         guard let rectangle = frame(element) else {
             return "This menu item is no longer visible. Reveal it and refresh."
         }
